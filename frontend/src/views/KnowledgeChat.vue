@@ -10,8 +10,8 @@
 	        </button>
       </div>
       <div class="history-list" v-if="historyList.length > 0" @scroll="menuChatId = ''">
-        <div 
-          v-for="chat in historyList" 
+        <div
+          v-for="chat in historyList"
           :key="chat.chatId"
           class="history-item"
           :class="{ active: chat.chatId === chatId && !batchMode, 'batch-mode': batchMode }"
@@ -176,17 +176,16 @@
             <div v-else v-html="renderMarkdown(msg.content)"></div>
             <!-- 播报按钮 + 知识库引用（分割线下方区域） -->
             <div class="speech-refs-area">
-              <!-- 语音播报按钮（当前隐藏） -->
+              <!-- 语音播报按钮：仅图标，无边框无底色；播报中变为停止图标 -->
               <button
-                v-if="false"
                 class="speech-btn"
                 :class="{ speaking: msg._speaking }"
                 @click="toggleSpeech(msg)"
                 :title="msg._speaking ? '停止播报' : '语音播报'"
+                :aria-label="msg._speaking ? '停止播报' : '语音播报'"
               >
-                <Volume2 v-if="!msg._speaking" size="14" />
-                <VolumeX v-else size="14" />
-                <span>{{ msg._speaking ? '停止' : '播报' }}</span>
+                <Volume2 v-if="!msg._speaking" size="16" />
+                <VolumeX v-else size="16" />
               </button>
               <!-- RAG 引用切片展示 -->
               <div v-if="msg.references && msg.references.length > 0" class="rag-references">
@@ -222,22 +221,49 @@
       </div>
     </div>
     <div class="input-area">
-      <div class="input-toolbar">
-        <label class="rag-toggle" title="开启后 AI 会从知识库检索相关内容回答问题" @click="ragEnabled = !ragEnabled">
-	          <Search class="rag-toggle-icon" size="16" />
-	          <span>知识库检索</span>
-          <div class="toggle-switch" :class="{ active: ragEnabled }">
-            <div class="toggle-knob"></div>
+      <!-- 输入框容器：输入框在上，底部工具条在下（左下 RAG 开关、右下大模型切换） -->
+      <div class="input-composer">
+        <textarea
+          ref="inputRef"
+          v-model="inputText"
+          placeholder="输入你想了解的内容..."
+          rows="1"
+          :disabled="loading"
+          @keydown.enter.prevent="onInputEnter"
+        />
+        <div class="input-toolbar">
+          <label class="rag-toggle" title="开启后 AI 会从知识库检索相关内容回答问题" @click="ragEnabled = !ragEnabled">
+            <Search class="rag-toggle-icon" size="16" />
+            <!-- 移动端用短标签 RAG，桌面端用完整标签 -->
+            <span class="rag-label-full">RAG</span>
+            <span class="rag-label-short">RAG</span>
+            <div class="toggle-switch" :class="{ active: ragEnabled }">
+              <div class="toggle-knob"></div>
+            </div>
+          </label>
+          <!-- 大模型切换：面板 Teleport 到 body，避免被 sticky 输入区裁剪 -->
+          <div ref="modelWrapRef" class="model-select">
+            <button
+              type="button"
+              class="model-trigger"
+              :class="{ open: modelMenuOpen }"
+              role="combobox"
+              aria-haspopup="listbox"
+              :aria-expanded="modelMenuOpen ? 'true' : 'false'"
+              aria-controls="chat-model-menu"
+              :aria-activedescendant="modelMenuOpen ? `chat-model-option-${activeModelIndex}` : undefined"
+              :aria-label="'当前大模型：' + currentModelLabel"
+              title="切换当前对话使用的大模型"
+              @click.stop="toggleModelMenu"
+              @keydown="handleModelKeydown"
+            >
+              <Cpu class="model-trigger-icon" size="16" />
+              <span class="model-trigger-text">{{ currentModelLabel }}</span>
+              <ChevronDown class="model-trigger-caret" size="14" />
+            </button>
           </div>
-        </label>
+        </div>
       </div>
-      <textarea
-        v-model="inputText"
-        placeholder="输入你想了解的内容..."
-        rows="2"
-        :disabled="loading"
-        @keydown.enter.prevent="onInputEnter"
-      />
       <!-- 语音输入（麦克风录音转文字） -->
       <button
         class="mic-btn"
@@ -262,6 +288,47 @@
 	      </button>
     </div>
     </div>
+
+    <!-- 大模型选择面板：Teleport 到 body + fixed 定位，避免被 sticky 输入区裁剪 -->
+    <Teleport to="body">
+      <Transition name="model-menu">
+        <div
+          v-if="modelMenuOpen"
+          id="chat-model-menu"
+          ref="modelMenuRef"
+          class="model-menu-fixed"
+          :style="modelMenuStyle"
+          role="listbox"
+          aria-label="选择大模型"
+          @click.stop
+        >
+          <div v-if="!modelList.length" class="model-menu-empty">
+            {{ modelsFailed ? '模型列表加载失败，请稍后重试' : '正在加载模型列表...' }}
+          </div>
+          <button
+            v-for="(item, index) in modelList"
+            :id="`chat-model-option-${index}`"
+            :key="item.key"
+            type="button"
+            class="model-option"
+            :class="{ active: currentModelKey === item.key, highlight: activeModelIndex === index, unavailable: !item.available }"
+            role="option"
+            tabindex="-1"
+            :aria-selected="currentModelKey === item.key ? 'true' : 'false'"
+            :aria-disabled="item.available ? 'false' : 'true'"
+            @click.stop="selectModel(item)"
+          >
+            <span class="model-option-main">
+              <span class="model-option-name">{{ item.displayName }}</span>
+              <span class="model-option-meta">
+                {{ item.available ? item.provider : '未配置密钥，暂不可用' }}
+              </span>
+            </span>
+            <Check v-if="currentModelKey === item.key" class="model-option-check" size="16" />
+          </button>
+        </div>
+      </Transition>
+    </Teleport>
 
     <!-- 删除确认弹窗 -->
     <Teleport to="body">
@@ -324,15 +391,16 @@
 </template>
 
 <script setup>
-import { ref, computed, nextTick, onMounted, onUnmounted, inject } from 'vue'
+import { ref, computed, nextTick, onMounted, onUnmounted, watch, inject } from 'vue'
 import { useRouter } from 'vue-router'
 import { streamKnowledgeChat, streamKnowledgeChatRag, request, updateChatTitle, deleteChat, batchDeleteChats } from '../api/request'
 import { username as reactiveUsername, removeToken } from '../utils/auth'
 import { linkifyHtml } from '../utils/linkify'
 import { previewImage, openPreview, closePreview } from '../utils/previewImage'
+import { modelList, currentModel, modelsFailed, fetchModels, setSelectedModel } from '../utils/model'
 import { marked } from 'marked'
 import DOMPurify from 'dompurify'
-import { Plus, Pencil, Trash2, ChevronLeft, ChevronRight, ArrowLeft, Search, ChevronDown, ArrowRight, Square, X, FileText, Volume2, VolumeX, Mic, MicOff, Menu, Lock, LogOut, MoreVertical, ListChecks, Check } from '@lucide/vue'
+import { Plus, Pencil, Trash2, ChevronLeft, ChevronRight, ArrowLeft, Search, ChevronDown, ArrowRight, Square, X, FileText, Volume2, VolumeX, Mic, MicOff, Menu, Lock, LogOut, MoreVertical, ListChecks, Check, Cpu } from '@lucide/vue'
 
 const router = useRouter()
 
@@ -341,10 +409,144 @@ const messages = ref([])
 const inputText = ref('')
 const loading = ref(false)
 const messagesRef = ref(null)
+const inputRef = ref(null)
 const abortController = ref(null)
+
+/**
+ * 输入框高度自适应：初始一行，内容变多时增高（上限与 CSS max-height 一致），清空后回到一行
+ */
+watch(inputText, () => {
+  const el = inputRef.value
+  if (!el) return
+  nextTick(() => {
+    el.style.height = 'auto'
+    // 上限取 CSS 的 max-height（30vh），超出后由 textarea 内部滚动
+    const limit = parseFloat(getComputedStyle(el).maxHeight)
+    el.style.height = `${Number.isFinite(limit) ? Math.min(el.scrollHeight, limit) : el.scrollHeight}px`
+  })
+})
 
 // RAG 知识库搜索开关
 const ragEnabled = ref(true)
+
+// ===== 大模型切换 =====
+const modelWrapRef = ref(null)
+const modelMenuRef = ref(null)
+const modelMenuOpen = ref(false)
+const modelMenuStyle = ref({ top: '0px', left: '0px' })
+const activeModelIndex = ref(0)
+
+/** 当前生效的模型标识，清单未加载完成时为空（后端按默认模型处理） */
+const currentModelKey = computed(() => (currentModel.value ? currentModel.value.key : ''))
+
+/** 触发按钮上显示的模型名 */
+const currentModelLabel = computed(() => (currentModel.value ? currentModel.value.displayName : '大模型'))
+
+/** 从指定位置沿指定方向找下一个可用模型的下标，找不到时返回原下标 */
+function findAvailableModelIndex(from, step) {
+  const list = modelList.value
+  const total = list.length
+  if (!total) return from
+  let index = from
+  for (let i = 0; i < total; i++) {
+    index = (index + step + total) % total
+    if (list[index].available) return index
+  }
+  return from
+}
+
+/** 展开模型面板：高亮当前模型并定位，清单为空时重试拉取 */
+function openModelMenu() {
+  const list = modelList.value
+  const currentIndex = list.findIndex((m) => m.key === currentModelKey.value && m.available)
+  // 清单为空（尚未加载或加载失败）时保持 -1，等清单到达后由 watch 修正为当前模型
+  activeModelIndex.value = currentIndex >= 0 ? currentIndex : (list.length ? findAvailableModelIndex(-1, 1) : -1)
+  modelMenuOpen.value = true
+  nextTick(positionModelMenu)
+  if (!list.length) {
+    fetchModels().catch(() => {})
+  }
+}
+
+// 清单异步到达后：面板高度会变化，重新定位并补上高亮，避免选项落到视口外或回车无响应
+watch(modelList, () => {
+  if (!modelMenuOpen.value) return
+  const currentIndex = modelList.value.findIndex((m) => m.key === currentModelKey.value && m.available)
+  activeModelIndex.value = currentIndex >= 0 ? currentIndex : findAvailableModelIndex(-1, 1)
+  nextTick(positionModelMenu)
+}, { flush: 'post' })
+
+function toggleModelMenu() {
+  if (modelMenuOpen.value) {
+    closeModelMenu()
+    return
+  }
+  openModelMenu()
+}
+
+function closeModelMenu() {
+  modelMenuOpen.value = false
+}
+
+/** 选择模型：不可用项不响应，选择结果持久化到本地并对后续对话生效 */
+function selectModel(item) {
+  if (!item.available) return
+  setSelectedModel(item.key)
+  modelMenuOpen.value = false
+  // 选项随面板一起卸载，把焦点交还触发按钮，避免焦点掉到 body
+  nextTick(() => {
+    const trigger = modelWrapRef.value ? modelWrapRef.value.querySelector('.model-trigger') : null
+    if (trigger) trigger.focus()
+  })
+}
+
+/** 面板挂在 body 上（脱离滚动容器），用触发按钮的视口坐标定位；空间不足则向上翻转并夹在视口内 */
+function positionModelMenu() {
+  const rect = modelWrapRef.value ? modelWrapRef.value.getBoundingClientRect() : null
+  const menu = modelMenuRef.value
+  if (!rect || !menu) return
+  const gap = 8
+  const menuHeight = menu.offsetHeight
+  const menuWidth = menu.offsetWidth
+  const flipUp = window.innerHeight - rect.bottom - gap < menuHeight && rect.top - gap >= menuHeight
+  const top = flipUp ? Math.max(8, rect.top - gap - menuHeight) : rect.bottom + gap
+  // 触发按钮位于输入框右下角：面板优先与按钮右缘对齐，再夹在视口内
+  const left = Math.min(Math.max(8, rect.right - menuWidth), Math.max(8, window.innerWidth - menuWidth - 8))
+  modelMenuStyle.value = { top: `${top}px`, left: `${left}px`, minWidth: `${rect.width}px` }
+}
+
+/** 触发按钮上的键盘操作：上下移动高亮（跳过不可用项）、回车选中、Esc/Tab 关闭 */
+function handleModelKeydown(event) {
+  if (event.key === 'Tab' || event.key === 'Escape') {
+    closeModelMenu()
+    return
+  }
+  if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+    event.preventDefault()
+    if (!modelMenuOpen.value) {
+      openModelMenu()
+      return
+    }
+    activeModelIndex.value = findAvailableModelIndex(activeModelIndex.value, event.key === 'ArrowDown' ? 1 : -1)
+    nextTick(positionModelMenu)
+    return
+  }
+  if (event.key === 'Enter' && modelMenuOpen.value) {
+    event.preventDefault()
+    const item = modelList.value[activeModelIndex.value]
+    if (item) selectModel(item)
+  }
+}
+
+/** 点击模型面板外部关闭面板 */
+function handleModelOutsideClick() {
+  if (modelMenuOpen.value) closeModelMenu()
+}
+
+/** 页面滚动时关闭模型面板（面板用视口坐标固定定位，滚动后会与触发按钮错位） */
+function handleModelScroll() {
+  if (modelMenuOpen.value) closeModelMenu()
+}
 
 // Sidebar state from App.vue
 const isSidebarOpen = inject('isSidebarOpen', ref(true))
@@ -583,6 +785,13 @@ onMounted(() => {
   document.addEventListener('keydown', handleKeydown)
   // 点击外部关闭三点菜单
   document.addEventListener('click', handleMenuOutsideClick)
+  // 点击外部关闭模型面板
+  document.addEventListener('click', handleModelOutsideClick)
+  // 滚动时关闭模型面板
+  window.addEventListener('scroll', handleModelScroll, true)
+
+  // 拉取大模型清单（带缓存；失败不阻塞页面，展开面板时会重试）
+  fetchModels().catch(() => {})
 })
 
 /** 点击历史对话外的空白处关闭三点菜单 */
@@ -590,10 +799,14 @@ function handleMenuOutsideClick() {
   menuChatId.value = ''
 }
 
-/** ESC 键关闭图片预览 */
+/** 全局 ESC 键：关闭图片预览与模型面板 */
 function handleKeydown(e) {
-  if (e.key === 'Escape' && previewImage.value.show) {
+  if (e.key !== 'Escape') return
+  if (previewImage.value.show) {
     closePreview()
+  }
+  if (modelMenuOpen.value) {
+    closeModelMenu()
   }
 }
 
@@ -636,6 +849,8 @@ onUnmounted(() => {
   document.removeEventListener('error', handleImageError, true)
   document.removeEventListener('keydown', handleKeydown)
   document.removeEventListener('click', handleMenuOutsideClick)
+  document.removeEventListener('click', handleModelOutsideClick)
+  window.removeEventListener('scroll', handleModelScroll, true)
   stopSpeech()
   if (recording.value) {
     recording.value = false
@@ -745,7 +960,7 @@ function send() {
         scrollToBottom()
         fetchHistoryList()
       },
-    }, controller.signal)
+    }, controller.signal, currentModelKey.value)
   } else {
     // 普通模式：不使用 RAG
     streamKnowledgeChat(text, chatId.value, {
@@ -769,7 +984,7 @@ function send() {
         scrollToBottom()
         fetchHistoryList()
       },
-    }, controller.signal)
+    }, controller.signal, currentModelKey.value)
   }
 }
 
@@ -1845,27 +2060,24 @@ function sttErrorMessage(err) {
   border-top: 1px solid rgba(245, 158, 11, 0.12);
   padding-top: 12px;
 }
+/* 语音播报按钮：仅图标，无边框无底色；hover 变深、播报中转红（表示可停止） */
 .speech-btn {
   display: inline-flex;
   align-items: center;
-  gap: 5px;
-  padding: 11px 14px;
-  border: 1px solid rgba(16, 185, 129, 0.3);
-  border-radius: 999px;
-  background: rgba(16, 185, 129, 0.08);
+  justify-content: center;
+  padding: 6px;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
   color: #10B981;
-  font-size: 12px;
   cursor: pointer;
-  transition: all 0.2s ease;
+  transition: color 0.2s ease;
 }
 .speech-btn:hover {
-  background: rgba(16, 185, 129, 0.15);
-  border-color: rgba(16, 185, 129, 0.5);
+  color: #047857;
 }
 .speech-btn.speaking {
-  background: #10B981;
-  border-color: #10B981;
-  color: #fff;
+  color: #EF4444;
 }
 /* 麦克风录音按钮 */
 .mic-btn {
@@ -2065,7 +2277,7 @@ function sttErrorMessage(err) {
 }
 .input-area {
   flex-shrink: 0;
-  padding: 1rem;
+  padding: 0.8rem 1rem;
   border-top: 1px solid rgba(255,255,255,0.3);
   display: flex;
   gap: 0.75rem;
@@ -2080,24 +2292,39 @@ function sttErrorMessage(err) {
 	  bottom: 0;
 	  z-index: 10;
 	}
-.input-area textarea {
+/* 输入框容器：输入框在上、底部工具条在下，两者共用一个边框，聚焦时整框高亮 */
+.input-composer {
+  height: 100%;
   flex: 1;
-  min-height: 44px;
-  max-height: 120px;
-  padding: 0.6rem 0.75rem;
-  border-radius: 10px;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  /* 上内边距放在容器上（不在 textarea 的滚动区内）：文字超出上限内部滚动时顶部留白不会被顶掉 */
+  padding-top: 0.5rem;
+  border-radius: 14px;
   border: 1px solid #e2e8f0;
   background: #f8fafc;
-  color: #1e293b;
-  resize: none;
-  font-size: 0.95rem;
   transition: border-color 0.2s, box-shadow 0.2s;
 }
-.input-area textarea:focus {
-	  outline: none;
-	  border-color: #34D399;
-	  box-shadow: 0 0 0 3px rgba(52, 211, 153, 0.1);
-	}
+.input-composer:focus-within {
+  border-color: #34D399;
+  box-shadow: 0 0 0 3px rgba(52, 211, 153, 0.1);
+}
+.input-composer textarea {
+  width: 100%;
+  min-height: 32px;
+  max-height: 32px;
+  padding: 0 1.2rem 0.05rem;
+  border: none;
+  border-radius: 14px 14px 0 0;
+  background: transparent;
+  color: #1e293b;
+  resize: none;
+  font-size: 0.9rem;
+}
+.input-composer textarea:focus {
+  outline: none;
+}
 .send-btn {
 	  display: flex;
 	  align-items: center;
@@ -2196,6 +2423,10 @@ function sttErrorMessage(err) {
     width: 44px;
     justify-content: center;
   }
+  /* 移动端播报按钮：图标不变，点击区补到 44px（16px 图标 + 14px×2） */
+  .speech-btn {
+    padding: 14px;
+  }
   .btn-text {
     display: none;
   }
@@ -2207,15 +2438,98 @@ function sttErrorMessage(err) {
   .message-row {
     max-width: 96%;
   }
-  /* 移动端输入区：RAG 工具栏独占一行，输入框/按钮换行排布，避免内容被挤出 */
+  /* 移动端输入区：整个输入区就是一个框，四个控件全在框内——左下角 RAG + 模型并列，右下角语音/发送 */
   .input-area {
     flex-wrap: wrap;
-    padding: 0.75rem;
-    padding-bottom: calc(0.75rem + env(safe-area-inset-bottom));
+    align-items: center;
+    gap: 6px;
+    margin: 0.6rem;
+    padding: 0.25rem 0.45rem calc(0.25rem + env(safe-area-inset-bottom));
+    border: 1px solid #e2e8f0;
+    border-radius: 16px;
+    background: #f8fafc;
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+    box-shadow: none;
+    transition: border-color 0.2s, box-shadow 0.2s;
   }
-  .input-toolbar {
+  .input-area:focus-within {
+    border-color: #34D399;
+    box-shadow: 0 0 0 3px rgba(52, 211, 153, 0.1);
+  }
+  /* 解开输入框容器：输入框与工具条直接参与输入区的排布（框由输入区来画） */
+  .input-composer {
+    display: contents;
+  }
+  .input-composer textarea {
     flex: 1 1 100%;
+    border: none;
+    background: transparent;
+    /* 顶部留白改用外边距：不属于 textarea 的滚动区，文字超长内部滚动时不会被顶掉 */
+    margin-top: 0.5rem;
+    padding: 0 0.45rem 0;
+  }
+  .input-composer textarea:focus {
+    box-shadow: none;
+  }
+  /* 左下角：RAG 与模型切换并列（basis 0 让它在换行计算时不吃掉整行，内部放不下则省略模型名） */
+  .input-area .input-toolbar {
+    flex: 1 1 0;
+    min-width: 0;
+    flex-direction: row;
+    align-items: center;
+    justify-content: flex-start;
+    gap: 6px;
+    padding: 0 0 0.1rem 0.35rem;
+  }
+  .input-area .rag-label-full {
+    display: none;
+  }
+  .input-area .rag-label-short {
+    display: inline;
+  }
+  /* 模型按钮撑满收缩后的容器，模型名超长时省略（否则按钮保持自然宽度会溢出、压到语音按钮） */
+  .input-area .model-trigger {
     width: 100%;
+  }
+  /* 右下角：语音/发送去边框、与输入框同底色 */
+  .input-area .mic-btn,
+  .input-area .send-btn {
+    width: 34px;
+    height: 34px;
+    min-width: 34px;
+    padding: 0;
+    border: none;
+    border-radius: 10px;
+    background: transparent;
+    box-shadow: none;
+  }
+  .input-area .mic-btn {
+    color: #10B981;
+  }
+  .input-area .send-btn {
+    color: #10B981;
+  }
+  .input-area .mic-btn:hover,
+  .input-area .send-btn:hover:not(:disabled),
+  .input-area .send-btn:active:not(:disabled) {
+    background: rgba(16, 185, 129, 0.1);
+    transform: none;
+    box-shadow: none;
+  }
+  .input-area .send-btn:disabled {
+    background: transparent;
+    color: #cbd5e1;
+    opacity: 1;
+  }
+  /* 录音与终止是瞬时状态，保留实色底 + 白图标以便一眼分辨 */
+  .input-area .mic-btn.recording {
+    background: #EF4444;
+    color: #FFFFFF;
+  }
+  .input-area .send-btn.stop-btn {
+    background: #EF4444;
+    color: #FFFFFF;
   }
   /* iOS 聚焦输入框不自动放大（<16px 会触发） */
   .input-area textarea {
@@ -2359,14 +2673,169 @@ function sttErrorMessage(err) {
   color: #10B981;
 }
 
-/* ==================== RAG 切换开关 ==================== */
+/* ==================== 大模型切换 ==================== */
+.model-select {
+  /* 与 RAG 开关同处一行：空间不足时收缩并省略模型名，不换行 */
+  flex: 0 1 auto;
+  min-width: 0;
+  margin-left: auto;
+}
+.model-trigger {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 28px;
+  padding: 4px 10px 4px 8px;
+  border-radius: 8px;
+  border: 1px;
+  background: #f8fafc;
+  color: #065F46;
+  font-family: inherit;
+  font-size: 0.82rem;
+  cursor: pointer;
+  transition: background 0.2s ease;
+}
+.model-trigger:hover {
+  background: rgba(16, 185, 129, 0.1);
+}
+.model-trigger:focus-visible {
+  outline: 2px solid #10B981;
+  outline-offset: 2px;
+}
+.model-trigger.open {
+  background: rgba(16, 185, 129, 0.12);
+}
+.model-trigger-icon {
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+  color: #10B981;
+}
+.model-trigger-text {
+  min-width: 0;
+  max-width: 150px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.model-trigger-caret {
+  width: 14px;
+  height: 14px;
+  flex-shrink: 0;
+  opacity: 0.7;
+  transition: transform 0.2s ease;
+}
+.model-trigger.open .model-trigger-caret {
+  transform: rotate(180deg);
+}
+
+/* 模型面板：Teleport 到 body，fixed 定位 + 玻璃拟态 */
+.model-menu-fixed {
+  position: fixed;
+  z-index: 3000;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 6px;
+  border-radius: 14px;
+  /* 面板过高时内部滚动，避免选项落到视口外 */
+  max-height: calc(100vh - 24px);
+  overflow-y: auto;
+  background: rgba(255, 255, 255, 0.94);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid rgba(200, 255, 255, 0.5);
+  box-shadow: 0 12px 32px rgba(16, 185, 129, 0.16);
+}
+.model-menu-empty {
+  padding: 12px;
+  color: #64748b;
+  font-size: 0.85rem;
+  white-space: nowrap;
+}
+.model-option {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  width: 100%;
+  min-height: 44px;
+  padding: 6px 12px;
+  border: none;
+  border-radius: 10px;
+  background: transparent;
+  color: #334155;
+  font-family: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+.model-option:hover:not(.unavailable),
+.model-option.highlight:not(.unavailable) {
+  background: rgba(16, 185, 129, 0.08);
+  color: #047857;
+}
+.model-option.active {
+  color: #047857;
+  font-weight: 600;
+}
+.model-option.unavailable {
+  color: #94a3b8;
+  cursor: not-allowed;
+}
+.model-option-main {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.model-option-name {
+  font-size: 0.88rem;
+  white-space: nowrap;
+}
+.model-option-meta {
+  font-size: 0.75rem;
+  color: #94a3b8;
+  white-space: nowrap;
+}
+.model-option-check {
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+  color: #10b981;
+}
+
+.model-menu-enter-active,
+.model-menu-leave-active {
+  transition: opacity 0.15s ease, transform 0.15s ease;
+}
+.model-menu-enter-from,
+.model-menu-leave-to {
+  opacity: 0;
+  transform: translateY(4px);
+}
+@media (prefers-reduced-motion: reduce) {
+  .model-menu-enter-active,
+  .model-menu-leave-active,
+  .model-trigger,
+  .model-trigger-caret {
+    transition: none;
+  }
+}
+
+/* ==================== 输入框底部工具条（左：RAG 开关，右：大模型切换） ==================== */
 .input-toolbar {
   display: flex;
   align-items: center;
-  gap: 12px;
-  flex-shrink: 0;
+  justify-content: space-between;
+  gap: 8px;
+  /* 输入框比内容高时（见 .input-composer 的高度），工具条贴住框底 */
+  margin-top: auto;
+  padding: 0 0.5rem 0.35rem;
 }
 .rag-toggle {
+	  min-height: 28px;
+	  flex-shrink: 0;
 	  display: flex;
 	  align-items: center;
 	  gap: 8px;
@@ -2376,19 +2845,21 @@ function sttErrorMessage(err) {
 	  color: #065F46;
 	  padding: 4px 10px 4px 8px;
 	  border-radius: 8px;
-	  background: rgba(16,185,129,0.05);
-	  border: 1px solid rgba(16,185,129,0.1);
+	  background: #f8fafc;
 	  transition: all 0.2s ease;
 	}
 	.rag-toggle:hover {
 	  background: rgba(16,185,129,0.1);
-	  border-color: rgba(16,185,129,0.2);
 	}
 	.rag-toggle-icon {
-	  width: 16px;
+	  width: 20px;
 	  height: 16px;
 	  flex-shrink: 0;
 	  color: #10B981;
+	}
+	/* 移动端短标签 RAG：桌面端隐藏 */
+	.rag-label-short {
+	  display: none;
 	}
 	.toggle-switch {
 	  width: 32px;

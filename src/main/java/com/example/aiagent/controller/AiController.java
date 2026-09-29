@@ -191,10 +191,12 @@ public class AiController {
 
     /**
      * 同步调用知识助手应用
+     *
+     * @param model 模型标识，不传时使用默认模型（兼容 App / 小程序等旧调用方）
      */
     @GetMapping("/knowledge/chat/sync")
-    public String doChatWithKnowledgeSync(String message, String chatId) {
-        return knowledgeApp.doChat(message, chatId);
+    public String doChatWithKnowledgeSync(String message, String chatId, String model) {
+        return knowledgeApp.doChat(message, chatId, model);
     }
 
     /**
@@ -208,10 +210,12 @@ public class AiController {
     /**
      * ============== 当前使用这个接口调用（无RAG） ==============
      * 纯文本流式聊天（无 SSE 包装，兼容换行符）
+     *
+     * @param model 模型标识，不传时使用默认模型（兼容 App / 小程序等旧调用方）
      */
     @GetMapping(value = "/knowledge/chat/stream", produces = MediaType.TEXT_PLAIN_VALUE)
-    public Flux<String> doChatWithKnowledgeStream(String message, String chatId) {
-        return knowledgeApp.doChatByStream(message, chatId);
+    public Flux<String> doChatWithKnowledgeStream(String message, String chatId, String model) {
+        return knowledgeApp.doChatByStream(message, chatId, model);
     }
 
     /**
@@ -219,10 +223,12 @@ public class AiController {
      * 带引用标注的 RAG 流式聊天
      * AI 回复中使用 [1]、[2] 标注引用来源
      * 流结束后追加JSON 格式的引用切片信息
+     *
+     * @param model 模型标识，不传时使用默认模型（兼容 App / 小程序等旧调用方）
      */
     @GetMapping(value = "/knowledge/chat/rag/stream", produces = MediaType.TEXT_PLAIN_VALUE)
-    public Flux<String> doChatWithKnowledgeRagStream(String message, String chatId) {
-        return knowledgeApp.doChatByStreamWithRag(message, chatId);
+    public Flux<String> doChatWithKnowledgeRagStream(String message, String chatId, String model) {
+        return knowledgeApp.doChatByStreamWithRag(message, chatId, model);
     }
 
     /**
