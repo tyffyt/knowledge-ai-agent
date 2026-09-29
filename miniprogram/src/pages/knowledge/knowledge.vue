@@ -1,6 +1,6 @@
 <template>
 	<view class="page">
-		<!-- 顶部工具栏：返回 / 历史 / 新对话 / 标题 / RAG 开关 -->
+		<!-- 顶部工具栏：返回 / 历史 / 新对话 / 标题 -->
 		<view class="toolbar">
 			<view class="tool-btn icon-btn" @tap="goHome">
 				<image class="tool-icon" src="/static/icons/back.svg" mode="aspectFit" />
@@ -12,10 +12,6 @@
 				<image class="tool-icon" src="/static/icons/plus.svg" mode="aspectFit" />
 			</view>
 			<view class="tool-title">{{ currentTitle }}</view>
-			<view class="rag-toggle" :class="{ on: ragEnabled }" @tap="toggleRag">
-				<text class="rag-text">RAG</text>
-				<view class="rag-dot"></view>
-			</view>
 		</view>
 
 		<!-- 消息列表 -->
@@ -37,29 +33,49 @@
 			</view>
 		</view>
 
-		<!-- 输入区 -->
+		<!-- 输入区：四个控件都在输入框内——左下角 RAG 与模型切换并列，右下角语音/发送 -->
 		<view class="input-area">
-			<view class="input-row">
-				<view class="input-wrap chat-input">
-					<textarea
-						class="chat-textarea"
-						v-model="input"
-						placeholder="输入问题..."
-						placeholder-style="color:#94A3B8"
-						:disabled="sending"
-						auto-height
-						confirm-type="send"
-						@confirm="send"
-					/>
-				</view>
-				<view class="mic-btn" :class="{ recording: recording }" @tap="toggleRecord">
-					<image class="btn-icon" :src="recording ? '/static/icons/mic-white.svg' : '/static/icons/mic.svg'" mode="aspectFit" />
-				</view>
-				<view class="send-btn" :class="{ sending: sending }" @tap="sending ? stop() : send()">
-					<image class="btn-icon" :src="sending ? '/static/icons/stop-white.svg' : '/static/icons/send-white.svg'" mode="aspectFit" />
+			<view class="chat-input" :class="{ focusing: inputFocused }">
+				<textarea
+					class="chat-textarea"
+					v-model="input"
+					placeholder="输入问题..."
+					placeholder-style="color:#94A3B8"
+					:disabled="sending"
+					auto-height
+					confirm-type="send"
+					@focus="inputFocused = true"
+					@blur="inputFocused = false"
+					@confirm="send"
+				/>
+				<view class="input-bottom">
+					<view class="input-tools">
+						<view class="rag-toggle" :class="{ on: ragEnabled }" @tap="toggleRag">
+							<image class="pill-icon" src="/static/icons/search.svg" mode="aspectFit" />
+							<text class="rag-text">RAG</text>
+							<view class="rag-switch">
+								<view class="rag-knob"></view>
+							</view>
+						</view>
+						<view class="model-pill" @tap="openModelPicker">
+							<image class="pill-icon" src="/static/icons/cpu.svg" mode="aspectFit" />
+							<!-- 用 view 而非 text：小程序里 text 上的 text-overflow 省略号不生效，名字太长会把整行撑宽 -->
+							<view class="model-name">{{ currentModelLabel }}</view>
+							<image class="model-caret" src="/static/icons/chevron-down.svg" mode="aspectFit" />
+						</view>
+					</view>
+					<view class="mic-btn" :class="{ recording: recording }" @tap="toggleRecord">
+						<image class="btn-icon" :src="recording ? '/static/icons/mic-white.svg' : '/static/icons/mic.svg'" mode="aspectFit" />
+					</view>
+					<view class="send-btn" :class="{ sending: sending }" @tap="sending ? stop() : send()">
+						<image class="btn-icon" :src="sending ? '/static/icons/stop-white.svg' : '/static/icons/send-green.svg'" mode="aspectFit" />
+					</view>
 				</view>
 			</view>
 		</view>
+
+		<!-- 大模型选择弹层 -->
+		<model-picker :visible="modelPickerVisible" @close="modelPickerVisible = false" />
 
 		<!-- 历史会话弹层 -->
 		<history-panel
@@ -76,15 +92,17 @@
 /**
  * 知识聊天页：流式聊天（RAG 开关）、语音输入、历史会话管理、新建对话
  */
-import { ref, nextTick } from 'vue'
+import { ref, computed, nextTick } from 'vue'
 import { onLoad, onShow, onUnload } from '@dcloudio/uni-app'
 import { isLoggedIn } from '../../utils/auth'
 import { generateChatId, generateMsgId, parseRagReferences, mapHistoryMessages } from '../../utils/chat'
 import { streamKnowledgeChat, streamKnowledgeChatRag, fetchChatDetail, fetchHistory } from '../../utils/api'
+import { currentModel, fetchModels } from '../../utils/model'
 import { startRecording, stopRecording, isRecording } from '../../utils/stt'
 import { stopSpeech } from '../../utils/tts'
 import chatBubble from '../../components/chat-bubble.vue'
 import historyPanel from '../../components/history-panel.vue'
+import modelPicker from '../../components/model-picker.vue'
 
 const RAG_REFS_MARK = '<!--RAG_REFS-->'
 
@@ -98,6 +116,11 @@ const recording = ref(false)
 const currentTitle = ref('新对话')
 const scrollInto = ref('')
 const historyList = ref([])
+/** 模型选择弹层与输入框聚焦态 */
+const modelPickerVisible = ref(false)
+const inputFocused = ref(false)
+/** 当前生效模型名：清单未加载完成时显示占位文案 */
+const currentModelLabel = computed(() => (currentModel.value ? currentModel.value.displayName : '大模型'))
 
 let streamTask = null
 let sentChatId = ''
@@ -109,6 +132,8 @@ onLoad(() => {
 		return
 	}
 	chatId.value = generateChatId()
+	// 预取模型清单：输入区显示当前模型名；失败不阻塞聊天
+	fetchModels().catch(() => {})
 })
 
 onShow(() => {
@@ -151,6 +176,12 @@ function newChat() {
 
 function toggleRag() {
 	ragEnabled.value = !ragEnabled.value
+}
+
+/** 打开模型选择弹层；清单未加载或上次失败时重新拉取（成功后有缓存，不会重复请求） */
+function openModelPicker() {
+	modelPickerVisible.value = true
+	fetchModels().catch(() => {})
 }
 
 function openHistory() {
@@ -227,9 +258,11 @@ async function send() {
 	}
 
 	try {
+		// 当前生效模型：清单未加载完成为空，由后端使用默认模型
+		const model = currentModel.value ? currentModel.value.key : ''
 		streamTask = ragEnabled.value
-			? streamKnowledgeChatRag(text, chatId.value, handlers)
-			: streamKnowledgeChat(text, chatId.value, handlers)
+			? streamKnowledgeChatRag(text, chatId.value, handlers, model)
+			: streamKnowledgeChat(text, chatId.value, handlers, model)
 	} catch (e) {
 		handlers.onError(e)
 	}
@@ -378,46 +411,6 @@ function toggleRecord() {
 	padding: 0 12rpx;
 }
 
-/* RAG 开关：胶囊开关样式 */
-.rag-toggle {
-	display: flex;
-	align-items: center;
-	height: 88rpx;
-	padding: 0 24rpx;
-	border-radius: 24rpx;
-	border: 1rpx solid rgba(16, 185, 129, 0.3);
-	background: rgba(255, 255, 255, 0.75);
-	flex-shrink: 0;
-	transition: all 0.2s ease;
-}
-
-.rag-toggle.on {
-	background: linear-gradient(135deg, #10B981, #34D399);
-	border-color: #10B981;
-}
-
-.rag-text {
-	font-size: 26rpx;
-	font-weight: 600;
-	color: #059669;
-}
-
-.rag-toggle.on .rag-text {
-	color: #FFFFFF;
-}
-
-.rag-dot {
-	width: 16rpx;
-	height: 16rpx;
-	border-radius: 50%;
-	background: #CBD5E1;
-	margin-left: 12rpx;
-}
-
-.rag-toggle.on .rag-dot {
-	background: #FFFFFF;
-}
-
 .msg-list {
 	flex: 1;
 	min-height: 0;
@@ -480,46 +473,146 @@ function toggleRecord() {
 	border-top: 1rpx solid rgba(16, 185, 129, 0.15);
 }
 
-.input-row {
+/* 输入框容器：输入框在上、底部一排控件在下，聚焦时整框高亮 */
+.chat-input {
 	display: flex;
-	align-items: flex-end;
+	flex-direction: column;
+	border-radius: 28rpx;
+	border: 1rpx solid #E2E8F0;
+	background: #F8FAFC;
+	transition: border-color 0.2s ease;
 }
 
-.chat-input {
-	flex: 1;
-	min-height: 88rpx;
-	padding: 0 28rpx;
-	border-radius: 28rpx;
-	box-sizing: border-box;
-	display: flex;
-	align-items: center;
+.chat-input.focusing {
+	border-color: #34D399;
 }
 
 .chat-textarea {
 	width: 100%;
 	min-height: 44rpx;
+	padding: 24rpx 24rpx 8rpx;
+	box-sizing: border-box;
 	font-size: 30rpx;
 	line-height: 44rpx;
 	max-height: 200rpx;
 }
 
+/* 底部一排：左下角 RAG 与模型切换并列，右下角语音/发送 */
+.input-bottom {
+	display: flex;
+	align-items: center;
+	padding: 0 16rpx 16rpx;
+}
+
+.input-tools {
+	display: flex;
+	align-items: center;
+	/* 允许收缩，配合模型名的省略号，避免整行超出把语音/发送挤出输入框 */
+	flex: 0 1 auto;
+	min-width: 0;
+	margin-right: auto;
+}
+
+.rag-toggle,
+.model-pill {
+	display: flex;
+	align-items: center;
+	min-height: 72rpx;
+	padding: 0 16rpx;
+	border-radius: 16rpx;
+	background: #F8FAFC;
+}
+
+.rag-toggle {
+	flex-shrink: 0;
+	margin-right: 8rpx;
+}
+
+.model-pill {
+	/* 空间不足时收缩并省略模型名 */
+	flex: 0 1 auto;
+	min-width: 0;
+	max-width: 100%;
+}
+
+.pill-icon {
+	width: 28rpx;
+	height: 28rpx;
+	flex-shrink: 0;
+}
+
+.rag-text {
+	font-size: 26rpx;
+	color: #065F46;
+	margin-left: 8rpx;
+}
+
+.rag-switch {
+	width: 64rpx;
+	height: 36rpx;
+	border-radius: 999rpx;
+	background: #CBD5E1;
+	margin-left: 12rpx;
+	position: relative;
+	flex-shrink: 0;
+	transition: background 0.25s ease;
+}
+
+.rag-toggle.on .rag-switch {
+	background: #10B981;
+}
+
+.rag-knob {
+	width: 28rpx;
+	height: 28rpx;
+	border-radius: 50%;
+	background: #FFFFFF;
+	position: absolute;
+	top: 4rpx;
+	left: 4rpx;
+	transition: transform 0.25s ease;
+	box-shadow: 0 2rpx 6rpx rgba(0, 0, 0, 0.15);
+}
+
+.rag-toggle.on .rag-knob {
+	transform: translateX(28rpx);
+}
+
+.model-name {
+	font-size: 26rpx;
+	color: #065F46;
+	margin-left: 8rpx;
+	min-width: 0;
+	max-width: 300rpx;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.model-caret {
+	width: 24rpx;
+	height: 24rpx;
+	flex-shrink: 0;
+	margin-left: 4rpx;
+	opacity: 0.7;
+}
+
+/* 语音/发送：去边框、与输入框同底色（录音/终止时用实色底 + 白图标便于分辨） */
 .mic-btn {
-	width: 88rpx;
-	height: 88rpx;
-	border-radius: 24rpx;
-	background: rgba(255, 255, 255, 0.9);
-	border: 1rpx solid rgba(16, 185, 129, 0.3);
+	width: 72rpx;
+	height: 72rpx;
+	border-radius: 16rpx;
+	background: #F8FAFC;
 	display: flex;
 	align-items: center;
 	justify-content: center;
-	margin-left: 16rpx;
+	margin-left: 12rpx;
 	flex-shrink: 0;
 	transition: all 0.2s ease;
 }
 
 .mic-btn.recording {
-	background: #ef4444;
-	border-color: #ef4444;
+	background: #EF4444;
 	animation: pulse 1s infinite;
 }
 
@@ -533,22 +626,20 @@ function toggleRecord() {
 }
 
 .send-btn {
-	width: 88rpx;
-	height: 88rpx;
-	border-radius: 24rpx;
-	background: linear-gradient(135deg, #10B981, #34D399);
+	width: 72rpx;
+	height: 72rpx;
+	border-radius: 16rpx;
+	background: #F8FAFC;
 	display: flex;
 	align-items: center;
 	justify-content: center;
-	margin-left: 16rpx;
+	margin-left: 12rpx;
 	flex-shrink: 0;
-	box-shadow: 0 6rpx 16rpx rgba(16, 185, 129, 0.3);
 	transition: all 0.2s ease;
 }
 
 .send-btn.sending {
-	background: #64748B;
-	box-shadow: none;
+	background: #EF4444;
 }
 
 .btn-icon {

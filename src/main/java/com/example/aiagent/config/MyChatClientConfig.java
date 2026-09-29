@@ -1,62 +1,135 @@
 package com.example.aiagent.config;
 
 
-import com.alibaba.cloud.ai.dashscope.chat.DashScopeChatModel;
 import com.example.aiagent.advisor.MyLoggerAdvisor;
 import com.example.aiagent.chatmemory.MongoChatMemory;
+import com.example.aiagent.constant.ChatModelCatalog;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.chat.client.advisor.MessageChatMemoryAdvisor;
 import org.springframework.ai.chat.model.ChatModel;
+import org.springframework.ai.chat.prompt.ChatOptions;
+import org.springframework.ai.model.tool.ToolCallingManager;
+import org.springframework.ai.openai.OpenAiChatModel;
+import org.springframework.ai.openai.OpenAiChatOptions;
+import org.springframework.ai.openai.api.OpenAiApi;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.util.StringUtils;
 
 /**
- * AI配置类，用于配置ChatClient相关的Bean
+ * 多模型 ChatClient 配置：一个模型一个 Bean，Bean 名称与 ChatModelCatalog 中的模型标识一致
+ * 同一底层 ChatModel 上的多个模型，各自用 defaultOptions 钉住模型名称
+ * 由 ChatModelService 按 Bean 名称注入并解析，供前端切换模型使用
  */
 @Configuration
-@ConditionalOnProperty(prefix = "conditionProperty.ai", name = "bean-type", havingValue = "chatClientConfig")
 public class MyChatClientConfig {
 
-    /**
-     * 创建并配置ChatClient Bean
-     *
-     * @param chatModel       聊天模型，通过@Qualifier指定为"openAiChatModel"
-     * @param myLoggerAdvisor 日志记录拦截器，用于记录聊天交互日志
-     * @param SYSTEM_PROMPT   系统提示信息，通过@Value注解从配置文件中获取
-     * @return 配置好的ChatClient实例
-     */
-    @Bean
-    public ChatClient chatClient(@Qualifier("openAiChatModel") ChatModel chatModel, MyLoggerAdvisor myLoggerAdvisor, MongoChatMemory mongoChatMemory, @Value("${knowledge-agent.system-prompt}") String SYSTEM_PROMPT) {
+    /** 千问 OpenAI 兼容模式端点默认地址，可用 spring.ai.dashscope.compatible-base-url 覆盖 */
+    private static final String DEFAULT_QWEN_BASE_URL = "https://dashscope.aliyuncs.com/compatible-mode";
 
-        // 使用建造者模式创建ChatClient实例
-        // 设置聊天模型和默认的拦截器
-        return ChatClient.builder(chatModel)
-                .defaultSystem(SYSTEM_PROMPT)
-                .defaultAdvisors(myLoggerAdvisor, new MessageChatMemoryAdvisor(mongoChatMemory))
-                .build();
+    /** 日志拦截器 */
+    private final MyLoggerAdvisor myLoggerAdvisor;
 
+    /** 对话记忆（MongoDB），逐个 ChatClient 都要挂上，否则切换模型后丢失上下文 */
+    private final MongoChatMemory mongoChatMemory;
+
+    /** 系统提示词 */
+    private final String systemPrompt;
+
+    public MyChatClientConfig(MyLoggerAdvisor myLoggerAdvisor,
+                              MongoChatMemory mongoChatMemory,
+                              @Value("${knowledge-agent.system-prompt}") String systemPrompt) {
+        this.myLoggerAdvisor = myLoggerAdvisor;
+        this.mongoChatMemory = mongoChatMemory;
+        this.systemPrompt = systemPrompt;
     }
 
     /**
-     * 创建并配置DashScopeChatModel Bean 千问模型
-     * @param dashscopeChatModel
-     * @param myLoggerAdvisor
-     * @param mongoChatMemory
-     * @param SYSTEM_PROMPT
-     * @return
+     * 自定义 ChatModel 所使用的 Bean
+     *
+     * 千问对话模型（OpenAI 兼容模式）
+     * 走 OpenAI 协议，与 DeepSeek 用同一套实现；密钥复用 spring.ai.dashscope.api-key，
+     * 未配置时千问模型在清单中标记为不可用
+     * 工具调用管理器使用 {@link ToolCallRepairingManager}，把该端点流式分片拆开的工具调用拼接完整
+     *
+     * @param apiKey  DashScope API Key
+     * @param baseUrl 兼容模式端点地址，为空时使用默认地址
+     * @return 千问对话模型
      */
     @Bean
-    public ChatClient chatClientQwen(@Qualifier("dashscopeChatModel") DashScopeChatModel dashscopeChatModel, MyLoggerAdvisor myLoggerAdvisor, MongoChatMemory mongoChatMemory, @Value("${knowledge-agent.system-prompt}") String SYSTEM_PROMPT) {
+    public ChatModel qwenChatModel(@Value("${spring.ai.dashscope.api-key:}") String apiKey,
+                                  @Value("${spring.ai.dashscope.compatible-base-url:}") String baseUrl) {
+        return OpenAiChatModel.builder()
+                .openAiApi(OpenAiApi.builder()
+                        .apiKey(apiKey)
+                        .baseUrl(StringUtils.hasText(baseUrl) ? baseUrl : DEFAULT_QWEN_BASE_URL)
+                        .build())
+                .toolCallingManager(new ToolCallRepairingManager(ToolCallingManager.builder().build()))
+                .build();
+    }
 
-        // 使用建造者模式创建ChatClient实例
-        // 设置聊天模型和默认的拦截器
-        return ChatClient.builder(dashscopeChatModel)
-                .defaultSystem(SYSTEM_PROMPT)  // 设置系统提示词
-                .defaultAdvisors(myLoggerAdvisor, new MessageChatMemoryAdvisor(mongoChatMemory))  // 添加日志和记忆拦截器
-                .build();  // 构建并返回ChatClient实例
+    /**
+     * DeepSeek V4.1 Flash 对话客户端
+     *
+     * @param chatModel DeepSeek 对话模型（spring.ai.openai.* 配置）
+     * @return 配置好的 ChatClient
+     */
+    @Bean(ChatModelCatalog.DEEPSEEK_FLASH)
+    public ChatClient chatClientDeepseekFlash(@Qualifier("openAiChatModel") ChatModel chatModel) {
+        return buildChatClient(chatModel,
+                OpenAiChatOptions.builder().model(ChatModelCatalog.DEEPSEEK_FLASH).build());
+    }
 
+    /**
+     * DeepSeek V4 Pro 对话客户端
+     *
+     * @param chatModel DeepSeek 对话模型（spring.ai.openai.* 配置）
+     * @return 配置好的 ChatClient
+     */
+    @Bean(ChatModelCatalog.DEEPSEEK_V4_PRO)
+    public ChatClient chatClientDeepseekPro(@Qualifier("openAiChatModel") ChatModel chatModel) {
+        return buildChatClient(chatModel,
+                OpenAiChatOptions.builder().model(ChatModelCatalog.DEEPSEEK_V4_PRO).build());
+    }
+
+    /**
+     * 千问 Qwen3.7 Plus 对话客户端
+     *
+     * @param chatModel 千问对话模型（OpenAI 兼容模式）
+     * @return 配置好的 ChatClient
+     */
+    @Bean(ChatModelCatalog.QWEN_37_PLUS)
+    public ChatClient chatClientQwen37Plus(@Qualifier("qwenChatModel") ChatModel chatModel) {
+        return buildChatClient(chatModel,
+                OpenAiChatOptions.builder().model(ChatModelCatalog.QWEN_37_PLUS).build());
+    }
+
+    /**
+     * 千问 Qwen3.8 Flash 对话客户端
+     *
+     * @param chatModel 千问对话模型（OpenAI 兼容模式）
+     * @return 配置好的 ChatClient
+     */
+    @Bean(ChatModelCatalog.QWEN_38_FLASH)
+    public ChatClient chatClientQwen38Flash(@Qualifier("qwenChatModel") ChatModel chatModel) {
+        return buildChatClient(chatModel,
+                OpenAiChatOptions.builder().model(ChatModelCatalog.QWEN_38_FLASH).build());
+    }
+
+    /**
+     * 构建统一的 ChatClient：钉住模型名称，并装配系统提示词、日志拦截器与对话记忆拦截器
+     *
+     * @param chatModel 底层对话模型
+     * @param options   该模型的调用选项（指定模型名称）
+     * @return 配置好的 ChatClient
+     */
+    private ChatClient buildChatClient(ChatModel chatModel, ChatOptions options) {
+        return ChatClient.builder(chatModel)
+                .defaultOptions(options)
+                .defaultSystem(systemPrompt)
+                .defaultAdvisors(myLoggerAdvisor, new MessageChatMemoryAdvisor(mongoChatMemory))
+                .build();
     }
 }
