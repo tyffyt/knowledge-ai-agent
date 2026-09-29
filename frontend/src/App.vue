@@ -86,10 +86,6 @@
         <Transition name="dock-dropdown">
           <div v-show="showDropdown" class="dock-dropdown-panel">
             <div class="dock-dropdown-name">{{ reactiveUsername }}</div>
-            <button type="button" class="dock-dropdown-item" @click="goChangePassword">
-	              <Lock class="dropdown-icon" size="18" />
-	              修改密码
-	            </button>
 	            <button v-if="reactiveIsAdmin" type="button" class="dock-dropdown-item" @click="goUserManage">
 	              <Users class="dropdown-icon" size="18" />
 	              用户管理
@@ -98,6 +94,14 @@
 	              <Database class="dropdown-icon" size="18" />
 	              知识库管理
 	            </button>
+              <button type="button" class="dock-dropdown-item" @click="goModels">
+                <Cpu class="dropdown-icon" size="18" />
+                大模型详情
+              </button>
+              <button type="button" class="dock-dropdown-item" @click="goChangePassword">
+                <Lock class="dropdown-icon" size="18" />
+                修改密码
+              </button>
 	            <button type="button" class="dock-dropdown-item" @click="logout">
 	              <LogOut class="dropdown-icon" size="18" />
 	              退出登录
@@ -117,7 +121,7 @@ import {
   isLoggedIn, getUsername, removeToken, token,
   username as reactiveUsername, isAdmin as reactiveIsAdmin,
 } from './utils/auth'
-import { Check, AlertCircle, Info, User, Lock, LogOut, Database, Users } from '@lucide/vue'
+import { Check, AlertCircle, Info, User, Lock, LogOut, Database, Users, Cpu } from '@lucide/vue'
 
 const router = useRouter()
 const route = useRoute()
@@ -215,6 +219,7 @@ function handleClickOutside(e) {
   if (avatarWrapRef.value && !avatarWrapRef.value.contains(e.target)) closeDropdown()
 }
 function goChangePassword() { closeDropdown(); router.push('/change-password') }
+function goModels() { closeDropdown(); router.push('/models') }
 function goKnowledgeDocuments() { closeDropdown(); router.push('/knowledge-documents') }
 function goUserManage() { closeDropdown(); router.push('/user-manage') }
 function logout() {

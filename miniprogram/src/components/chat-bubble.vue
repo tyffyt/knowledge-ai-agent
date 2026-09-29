@@ -28,11 +28,10 @@
 					@imgtap="onImgTap"
 					@linktap="onLinkTap"
 				/>
-				<!-- TTS 播报按钮 -->
+				<!-- TTS 播报按钮：仅图标，无边框无底色；播报中变为停止图标 -->
 				<view v-if="msg.content && !msg.loading" class="ai-actions">
 					<view class="action-btn" @tap="onToggleSpeech">
-						<image class="action-icon" src="/static/icons/volume.svg" mode="aspectFit" />
-						<text>{{ speaking ? '停止' : '播报' }}</text>
+						<image class="action-icon" :src="speaking ? '/static/icons/volume-off.svg' : '/static/icons/volume.svg'" mode="aspectFit" />
 					</view>
 				</view>
 				<!-- RAG 引用折叠展示 -->
@@ -357,21 +356,24 @@ function onToggleSpeech() {
 	margin-top: 16rpx;
 }
 
+/* 仅图标、无边框无底色 */
 .action-btn {
 	display: flex;
 	align-items: center;
-	background: #ECFDF5;
-	border: 1rpx solid rgba(16, 185, 129, 0.3);
-	color: #059669;
-	border-radius: 999rpx;
-	padding: 10rpx 28rpx;
-	font-size: 24rpx;
+	justify-content: center;
+	background: transparent;
+	border: none;
+	padding: 12rpx;
+	border-radius: 12rpx;
+}
+
+.action-btn:active {
+	opacity: 0.6;
 }
 
 .action-icon {
-	width: 28rpx;
-	height: 28rpx;
-	margin-right: 8rpx;
+	width: 32rpx;
+	height: 32rpx;
 }
 
 /* RAG 引用 */

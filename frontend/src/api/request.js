@@ -32,14 +32,32 @@ request.interceptors.response.use(
 )
 
 /**
+ * 读取非 2xx 响应的错误信息
+ * 后端统一返回 {code, message}，优先取 message，取不到时回退到通用中文提示，
+ * 避免把英文 statusText 直接展示给用户
+ */
+async function readErrorMessage(res) {
+  try {
+    const data = await res.clone().json()
+    if (data && data.message) return data.message
+  } catch {
+    // 响应体不是 JSON，走通用提示
+  }
+  return `请求失败（${res.status}）`
+}
+
+/**
  * 纯文本流式聊天 - 知识助手
  * 使用 /chat/stream 端点，无 SSE 包装，兼容换行符
  * 支持 AbortController 取消
+ *
+ * @param model 模型标识，为空时由后端使用默认模型
  */
-export function streamKnowledgeChat(message, chatId, { onChunk, onDone, onError }, signal) {
+export function streamKnowledgeChat(message, chatId, { onChunk, onDone, onError }, signal, model) {
   const url = new URL(BASE_URL + '/api/ai/knowledge/chat/stream', window.location.origin)
   url.searchParams.set('message', message)
   url.searchParams.set('chatId', chatId)
+  if (model) url.searchParams.set('model', model)
 
   const headers = {}
   const token = getToken()
@@ -53,7 +71,7 @@ export function streamKnowledgeChat(message, chatId, { onChunk, onDone, onError 
         window.location.href = '/login?returnUrl=' + returnUrl
         return
       }
-      if (!res.ok) throw new Error(res.statusText)
+      if (!res.ok) return readErrorMessage(res).then((msg) => Promise.reject(new Error(msg)))
       const reader = res.body.getReader()
       const decoder = new TextDecoder()
       function read() {
@@ -84,11 +102,14 @@ export function streamKnowledgeChat(message, chatId, { onChunk, onDone, onError 
  * 使用 /chat/rag/stream 端点
  * 流结束后会收到 <!--RAG_REFS--> 标记 + JSON 引用数据
  * onDone(refs) 回调会传入解析后的引用数组
+ *
+ * @param model 模型标识，为空时由后端使用默认模型
  */
-export function streamKnowledgeChatRag(message, chatId, { onChunk, onDone, onError }, signal) {
+export function streamKnowledgeChatRag(message, chatId, { onChunk, onDone, onError }, signal, model) {
   const url = new URL(BASE_URL + '/api/ai/knowledge/chat/rag/stream', window.location.origin)
   url.searchParams.set('message', message)
   url.searchParams.set('chatId', chatId)
+  if (model) url.searchParams.set('model', model)
 
   const headers = {}
   const token = getToken()
@@ -104,7 +125,7 @@ export function streamKnowledgeChatRag(message, chatId, { onChunk, onDone, onErr
         window.location.href = '/login?returnUrl=' + returnUrl
         return
       }
-      if (!res.ok) throw new Error(res.statusText)
+      if (!res.ok) return readErrorMessage(res).then((msg) => Promise.reject(new Error(msg)))
       const reader = res.body.getReader()
       const decoder = new TextDecoder()
       function read() {
@@ -230,6 +251,13 @@ export async function fetchCurrentUser() {
   const data = res.data || {}
   setToken(getToken(), data.username, data.isAdmin)
   return data
+}
+
+/**
+ * 大模型清单（含参数、价格、能力与可用性标记）
+ */
+export function fetchModelList() {
+  return request.get('/ai/model/list')
 }
 
 /**

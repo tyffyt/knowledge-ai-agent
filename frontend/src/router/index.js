@@ -34,6 +34,12 @@ const routes = [
     meta: { title: '修改密码', requiresAuth: true },
   },
   {
+    path: '/models',
+    name: 'ModelList',
+    component: () => import('../views/ModelList.vue'),
+    meta: { title: '大模型', requiresAuth: true },
+  },
+  {
     path: '/knowledge-documents',
     name: 'KnowledgeDocuments',
     component: () => import('../views/KnowledgeDocuments.vue'),

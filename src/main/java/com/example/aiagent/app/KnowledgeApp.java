@@ -7,6 +7,7 @@ import com.example.aiagent.chatmemory.MongoChatMemory;
 import com.example.aiagent.model.ChatMessages;
 import com.example.aiagent.rag.KnowledgeAppRagCustomAdvisorFactory;
 import com.example.aiagent.rag.QueryRewriter;
+import com.example.aiagent.service.ChatModelService;
 import jakarta.annotation.Resource;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.ai.chat.client.ChatClient;
@@ -44,7 +45,13 @@ public class KnowledgeApp {
     // AI 回复中的知识库引用标注，如 [1]、[2]（1-2 位数字，避免误匹配年份如 [2026]）
     private static final Pattern CITATION_PATTERN = Pattern.compile("\\[\\d{1,2}\\]");
 
-    private final ChatClient chatClient;
+    // ==================== 模式一（备用）：单一 ChatClient，模型固定为 DeepSeek ====================
+    // private final ChatClient chatClient;
+
+    // ==================== 模式二（当前）：多模型切换 ====================
+    // ChatClient 由 config/MyChatClientConfig 按模型提供，按模型标识解析
+    private final ChatModelService chatModelService;
+
     // 构造函数注入系统提示词
     private final String SYSTEM_PROMPT;
     @Resource
@@ -63,30 +70,83 @@ public class KnowledgeApp {
     private ToolCallbackProvider toolCallbackProvider;
 
 
+    // ==================== 模式一（备用）：单一模型，固定 DeepSeek ====================
+    // 切回模式一的步骤：① 放开本构造器与上面的 chatClient 字段；
+    //                  ② 注释掉下面的模式二构造器；
+    //                  ③ 放开 resolveChatClient 中模式一的 return
+    // 注意：模式一下前端传入的模型标识不生效，模型下拉框不会真的切换模型
     // MongoChatMemory,构造器注入，因为@Resource属于属性注入，晚于构造器
-    public KnowledgeApp(@Qualifier("openAiChatModel") ChatModel chatModel, MongoChatMemory mongoChatMemory, @Value("${knowledge-agent.system-prompt}") String SYSTEM_PROMPT) {
-        // 注入提示词
+    // public KnowledgeApp(@Qualifier("openAiChatModel") ChatModel chatModel, MongoChatMemory mongoChatMemory, @Value("${knowledge-agent.system-prompt}") String SYSTEM_PROMPT) {
+    //     // 注入提示词
+    //     this.SYSTEM_PROMPT = SYSTEM_PROMPT;
+    //
+    //     // // 初始化基于文件的对话记忆
+    //     // String fileDir = System.getProperty("user.dir") + "\\chat_memory";
+    //     // ChatMemory chatMemory = new FileBasedChatMemory(fileDir);
+    //
+    //     chatClient = ChatClient.builder(chatModel)
+    //             .defaultSystem(SYSTEM_PROMPT)
+    //             .defaultAdvisors(
+    //                     // 基于内存
+    //                     // new MessageChatMemoryAdvisor(chatMemory),
+    //                     // 基于MongoDB
+    //                     new MessageChatMemoryAdvisor(mongoChatMemory),
+    //                     // 自定义日志拦截器
+    //                     new MyLoggerAdvisor()
+    //             ).build();
+    //
+    // }
+
+    /**
+     * 模式二（当前使用）：多模型切换
+     * ChatClient 由 config/MyChatClientConfig 按模型提供，通过 ChatModelService 按模型标识解析
+     * 对话记忆由各 ChatClient 上的 MessageChatMemoryAdvisor 负责，与模型无关，切换模型后上下文依然连续
+     *
+     * @param chatModelService 模型清单与解析服务
+     * @param SYSTEM_PROMPT    系统提示词，来自配置文件
+     */
+    public KnowledgeApp(ChatModelService chatModelService,
+                        @Value("${knowledge-agent.system-prompt}") String SYSTEM_PROMPT) {
+        this.chatModelService = chatModelService;
         this.SYSTEM_PROMPT = SYSTEM_PROMPT;
-
-        // // 初始化基于文件的对话记忆
-        // String fileDir = System.getProperty("user.dir") + "\\chat_memory";
-        // ChatMemory chatMemory = new FileBasedChatMemory(fileDir);
-
-        chatClient = ChatClient.builder(chatModel)
-                .defaultSystem(SYSTEM_PROMPT)
-                .defaultAdvisors(
-                        // 基于内存
-                        // new MessageChatMemoryAdvisor(chatMemory),
-                        // 基于MongoDB
-                        new MessageChatMemoryAdvisor(mongoChatMemory),
-                        // 自定义日志拦截器
-                        new MyLoggerAdvisor()
-                ).build();
-
     }
 
+    /**
+     * 获取当前使用的 ChatClient，是两种模式的唯一取用点
+     * 模式二（当前）：按模型标识解析，支持多模型切换；标识为空时使用默认模型
+     * 模式一（备用）：忽略 model 参数，固定使用构造器里创建的单一 ChatClient
+     *
+     * @param model 模型标识，可为空
+     * @return 对应的 ChatClient
+     */
+    private ChatClient resolveChatClient(String model) {
+        // 模式二（当前）
+        return chatModelService.resolveChatClient(model);
+        // 模式一（备用）
+        // return this.chatClient;
+    }
+
+    /**
+     * 同步调用知识助手应用，使用默认模型
+     *
+     * @param message 用户输入的消息内容
+     * @param chatId  聊天会话的唯一标识符
+     * @return AI 回复内容
+     */
     public String doChat(String message, String chatId) {
-        ChatResponse response = chatClient
+        return doChat(message, chatId, null);
+    }
+
+    /**
+     * 同步调用知识助手应用
+     *
+     * @param message 用户输入的消息内容
+     * @param chatId  聊天会话的唯一标识符
+     * @param model   模型标识，为空时使用默认模型
+     * @return AI 回复内容
+     */
+    public String doChat(String message, String chatId, String model) {
+        ChatResponse response = resolveChatClient(model)
                 .prompt()
                 .user(message)
                 .advisors(spec -> spec.param(CHAT_MEMORY_CONVERSATION_ID_KEY, chatId)
@@ -99,14 +159,26 @@ public class KnowledgeApp {
     }
 
     /**
-     * 通过流式方式处理聊天请求 （无RAG）
+     * 通过流式方式处理聊天请求 （无RAG），使用默认模型
      *
      * @param message 用户输入的消息内容
      * @param chatId  聊天会话的唯一标识符
      * @return 返回一个Flux流，包含流式返回的聊天响应内容
      */
     public Flux<String> doChatByStream(String message, String chatId) {
-        return chatClient
+        return doChatByStream(message, chatId, null);
+    }
+
+    /**
+     * 通过流式方式处理聊天请求 （无RAG）
+     *
+     * @param message 用户输入的消息内容
+     * @param chatId  聊天会话的唯一标识符
+     * @param model   模型标识，为空时使用默认模型
+     * @return 返回一个Flux流，包含流式返回的聊天响应内容
+     */
+    public Flux<String> doChatByStream(String message, String chatId, String model) {
+        return resolveChatClient(model)
                 .prompt()
                 .user(message)
                 .advisors(spec -> spec.param(CHAT_MEMORY_CONVERSATION_ID_KEY, chatId)
@@ -124,21 +196,30 @@ public class KnowledgeApp {
      * AI 回复中会用 [1]、[2] 标注引用来源
      * 流结束后追加引用切片信息，前端可解析展示
      * 通过 LLM 智能判断是否需要检索知识库
+     *
+     * @param message 用户输入的消息内容
+     * @param chatId  聊天会话的唯一标识符
+     * @param model   模型标识，为空时使用默认模型
+     * @return 返回一个Flux流，包含流式返回的聊天响应内容与末尾的引用切片信息
      */
-    public Flux<String> doChatByStreamWithRag(String message, String chatId) {
+    public Flux<String> doChatByStreamWithRag(String message, String chatId, String model) {
+        // 先解析模型：模型非法或不可用时立即失败，不再触发后面的内部 LLM 调用
+        ChatClient chatClient = resolveChatClient(model);
+
         // RAG向量数据库检索设置（相似度阈值 0.5，topK 3）
         QuestionAnswerAdvisor ragAdvisor = QuestionAnswerAdvisor.builder(this.knowledgeVectorStore)
                 .searchRequest(SearchRequest.builder().similarityThreshold(0.5d).topK(3).build())
                 .build();
 
         // 智能分析：判断是否需要检索 + 查询改写（一次LLM调用完成）
+        // 该内部调用固定使用默认模型，不随用户选择的模型变化
         QueryRewriter.QueryAnalysis analysis = queryRewriter.analyze(message);
         log.info("查询分析: needsRetrieval={}, rewrittenQuery={}", analysis.needsRetrieval(), analysis.rewrittenQuery());
 
         // 不需要检索知识库：直接走普通流式对话
         if (!analysis.needsRetrieval()) {
             log.info("智能判断为无需检索知识库: message={}", message);
-            return doChatByStream(message, chatId);
+            return doChatByStream(message, chatId, model);
         }
 
         // 需要检索：使用改写后的查询进行 RAG 流式对话
@@ -261,7 +342,7 @@ public class KnowledgeApp {
      * @return
      */
     public KnowledgeReport doChatWithReport(String message, String chatId) {
-        KnowledgeReport response = chatClient
+        KnowledgeReport response = resolveChatClient(null)
                 .prompt()
                 .system(SYSTEM_PROMPT + "每次对话后都要生成知识总结，标题为{用户名}的知识报告，内容为要点列表")
                 .user(message)
@@ -288,7 +369,7 @@ public class KnowledgeApp {
         String rewriteMessage = (analysis.rewrittenQuery() != null && !analysis.rewrittenQuery().isBlank())
                 ? analysis.rewrittenQuery() : message;
 
-        ChatResponse chatResponse = chatClient
+        ChatResponse chatResponse = resolveChatClient(null)
                 .prompt()
                 // 使用改写后的查询
                 .user(rewriteMessage)
@@ -315,7 +396,7 @@ public class KnowledgeApp {
      * AI 工具对话功能（支持调用工具）
      */
     public String doChatWithTool(String message, String chatId) {
-        ChatResponse chatResponse = chatClient
+        ChatResponse chatResponse = resolveChatClient(null)
                 .prompt()
                 .user(message)
                 .advisors(spec -> spec.param(CHAT_MEMORY_CONVERSATION_ID_KEY, chatId)
@@ -334,7 +415,7 @@ public class KnowledgeApp {
      * AI 对话功能（调用MCP服务）
      */
     public String doChatWithMcp(String message, String chatId) {
-        ChatResponse chatResponse = chatClient
+        ChatResponse chatResponse = resolveChatClient(null)
                 .prompt()
                 .user(message)
                 .advisors(spec -> spec.param(CHAT_MEMORY_CONVERSATION_ID_KEY, chatId)

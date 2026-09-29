@@ -39,12 +39,21 @@ export const deleteChat = (chatId) =>
 export const batchDeleteChats = (chatIds) =>
 	request({ url: '/ai/knowledge/chat/history/batch-delete', method: 'POST', data: { chatIds } })
 
-// ---- 流式聊天（knowledge 为纯文本 chunk 流，manus 为 SSE 帧流，尾部可能带 <!--RAG_REFS-->JSON）----
-export const streamKnowledgeChat = (message, chatId, handlers) =>
-	streamRequest('/ai/knowledge/chat/stream', { message, chatId }, handlers)
+// ---- 大模型清单（ChatModelController，需 token）----
+export const fetchModelList = () =>
+	request({ url: '/ai/model/list' })
 
-export const streamKnowledgeChatRag = (message, chatId, handlers) =>
-	streamRequest('/ai/knowledge/chat/rag/stream', { message, chatId }, handlers)
+// ---- 流式聊天（knowledge 为纯文本 chunk 流，manus 为 SSE 帧流，尾部可能带 <!--RAG_REFS-->JSON）----
+export const streamKnowledgeChat = (message, chatId, handlers, model) =>
+	streamRequest('/ai/knowledge/chat/stream', withModel({ message, chatId }, model), handlers)
+
+export const streamKnowledgeChatRag = (message, chatId, handlers, model) =>
+	streamRequest('/ai/knowledge/chat/rag/stream', withModel({ message, chatId }, model), handlers)
+
+/** 模型标识为空时不下发该参数，由后端使用默认模型 */
+function withModel(query, model) {
+	return model ? { ...query, model } : query
+}
 
 export const streamManusChat = (message, handlers) =>
 	streamRequest('/ai/manus/chat', { message }, handlers, { sse: true })
