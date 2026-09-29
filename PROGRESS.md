@@ -5,7 +5,7 @@
 ## 项目状态
 
 - 当前分支：`test`（工作分支，`PROGRESS.md` 只在此分支维护）· `master`（稳定主干，不放文档类文件）。版本 `0.2.0`（`pom.xml` 与 `CHANGELOG.md` 一致）。两分支关系是**分叉**：不直接 merge（会把 `master` 已删除的语料与 skills 复活），只把 `test` 的功能提交 **cherry-pick** 过去——约定与实践命令见「下一步」与「风险 / 遗留问题」。两分支均已推送、本地与远端同步；临时分支 `knowledge-user-manage` 待删除（远端同理）。
-- 一句话现状：规则体系、子智能体、进度/版本管理均已落地；Web 端「知识库文档管理」（`0.1.0`）与「用户管理」（`0.2.0`）完成开发 + 自测 + 独立审查并经用户验收，已合入 `test` 并 cherry-pick 到 `master`。**当前需求「大模型切换 + 大模型展示页」三端已验收、文档已同步、改动尚未提交**（分支 `knowledge-switch-model`，基于 `test`）：Web 端 4 个模型可切（deepseek-flash / deepseek-v4-pro / qwen3.7-plus / qwen3.8-flash）+ `/models` 展示页；安卓为 WebView 壳（部署新 H5 即生效、免重打包）；小程序同步实现模型切换。期间顺带修掉 `qwen3.8-flash` 带工具时的流式工具调用报错（Spring AI M6 缺陷，见陷阱 62）。仍待推进的事项见「后续优化（待办）」与「下一步」。
+- 一句话现状：规则体系、子智能体、进度/版本管理均已落地；Web 端「知识库文档管理」（`0.1.0`）与「用户管理」（`0.2.0`）完成开发 + 自测 + 独立审查并经用户验收，已合入 `test` 并 cherry-pick 到 `master`。**当前需求「大模型切换 + 大模型展示页」三端已验收，版本升至 `0.3.0`，功能与文档已分两条提交（`2efb7ed` / `f016636`，均未推送）**（分支 `knowledge-switch-model`，基于 `test`）：Web 端 4 个模型可切（deepseek-flash / deepseek-v4-pro / qwen3.7-plus / qwen3.8-flash）+ `/models` 展示页；安卓为 WebView 壳（部署新 H5 即生效、免重打包）；小程序同步实现模型切换。期间顺带修掉 `qwen3.8-flash` 带工具时的流式工具调用报错（Spring AI M6 缺陷，见陷阱 62）。仍待推进的事项见「后续优化（待办）」与「下一步」。
 
 ## 需求 / 任务清单
 
@@ -101,6 +101,7 @@
 
 | 日期 | 改动 | 涉及文件/模块 | 是否已测/已审 |
 |------|------|--------------|--------------|
+| 2026/9/30 | **发版收尾（补齐上次遗漏的版本记录）**：`pom.xml` `0.2.0` → `0.3.0`、CHANGELOG 新增 0.3.0 条目；AGENTS.md 补规则「用户说可以提交 = 本次需求验收通过，收尾一并写 CHANGELOG 与升版本，不挂成待决项」并同步 CLAUDE.md；本次两条提交（功能 `2efb7ed` / 文档 `f016636`）由用户在本机执行、均未推送 | AGENTS.md / CLAUDE.md / CHANGELOG.md / pom.xml / PROGRESS.md | 文档类改动（仅版本号与记录，不改代码） |
 | 2026/9/30 | **规则文档审计（查漏补缺 + 去重）**：修正 4 处过期内容——陷阱 2「JWT Secret 长度」改写为实际行为（密钥启动随机生成、`app.jwt.secret` 未被使用、重启即失效），小程序文档仍写着用游客 `touristappid`（与真机要求矛盾），安卓文档称本机无 SDK/JDK 1.8（实际已装且已出 APK），陷阱 47 的「user-dock 遮挡」与陷阱 51 重复；删除 rules-template 的 `CLAUDE.md` 单文件旧称谓（改为 AGENTS.md 主 + CLAUDE.md 镜像）；AGENTS 去重（文档同步规则、敏感配置与 Git 排除清单、自检清单 4 项并为 2 项）并补入「新功能先规划后开发」；本文件合并「项目状态」两段重复叙述、清理已闭环的「下一步」条目 | AGENTS.md / CLAUDE.md / docs/known-pitfalls.md / docs/miniprogram.md / docs/android-app.md / docs/rules-template.md / PROGRESS.md | 文档类改动（陷阱编号交叉校验 65↔65、AGENTS 与 CLAUDE 逐字节一致；无 git 操作） |
 | 2026/9/29 | **文档审计与同步（按你确认范围）**：修正四处事实错误——AGENTS/README 头部的单模型表述、android-app 播报三处过期描述、播报按钮移动端点击区实为 38px（CSS 补到 44px）；以 AGENTS.md 为准重建 CLAUDE.md 并把「同步 CLAUDE」「PROGRESS 记录抓重点」写进维护规则；本文件 9/28–29 记录压缩为要点 | 改 AGENTS/CLAUDE/README/android-app/miniprogram/known-pitfalls/PROGRESS 与 Web 聊天页 CSS | 是（陷阱编号交叉校验 65↔65 对齐；前端构建通过；无 git 操作） |
 | 2026/9/29 | **语音播报放出 + 三端 UI 统一**：Web 端去掉播报按钮的 `v-if="false"` 并去掉文字，三端统一为仅图标、无边框无底色；播报中图标转红（Web 换 VolumeX、小程序换新增的 volume-off.svg）表示可停止，纯图标按钮补 aria-label。安卓随 H5 生效、壳层零改动 | 改 Web 聊天页、小程序消息气泡；新增小程序 volume-off.svg | 是（TTS 接口 curl 冒烟 200；Web 实测播报、停止、复位正常；小程序编译通过，真机听感待验） |
@@ -161,4 +162,4 @@
 1. **`master` / `test` 协作约定（2026/9/20 已定，长期有效）**：① 不 merge，只把 `test` 的功能提交 cherry-pick 到 `master`；② 对比两分支时排除 `master` 本就不放的文件（`.agents/`、`notes/`、`src/main/resources/document/`、`PROGRESS.md`），实践命令见「风险 / 遗留问题」；③ `PROGRESS.md` 只在 `test` 维护；④ `master` 上两条提交信息与内容不符（`e9a038e` / `95c798a`）按用户指示不处理（改写需 force-push）；⑤ 临时分支 `knowledge-user-manage`（本地与远端）待删除。
 2. **入库忽略约定（已核实）**：`src/main/resources/application.yml`（含密钥）与 `src/main/resources/document/`（运行时上传的文档）均被 `.gitignore` 忽略；`docs/plans/` 同样不入库（2026/9/21 用户决定）——只在用户**明确要求**时才把计划写入该目录。
 3. **后续需求与长期事项**：见「后续优化（待办）」——遗留 ① 应用外壳矮视口不滚动、全站触控目标补齐、个人信息入口重构、用户管理批量机制描述符化与「批量改用户名」前置条件、manus 超级智能体。
-4. **本次需求（多模型切换 + 大模型展示页）待你决定**：ⓐ「模式一（备用）」注解保留方案是否合适；ⓑ `AuthService` 随机 JWT 密钥的既有缺陷是否要修（见「风险 / 遗留问题」）；ⓒ 何时写 CHANGELOG 与升版本（建议 `0.2.0` → `0.3.0`，按你指示没动）；ⓓ 是否把 `ToolCallRepairingManager` 也挂到 DeepSeek 两个模型（当前未挂，实测它们不分片）；ⓔ 小程序是否也要「大模型展示页」（原需求定的是"只在 Web 端设计"）；ⓕ 提交与推送时机。另：调试用的 `ChatModelTest.java` 是否入库由你决定；你手写的 `.model-trigger { border: 1px }`（只写宽度没有样式，等于不画边框）保留未动。
+4. **本次需求（多模型切换 + 大模型展示页）待你决定**：ⓐ「模式一（备用）」注解保留方案是否合适；ⓑ `AuthService` 随机 JWT 密钥的既有缺陷是否要修（见「风险 / 遗留问题」）；ⓒ ~~何时写 CHANGELOG 与升版本~~ **已完成（2026/9/30）**：`0.2.0` → `0.3.0`，CHANGELOG 新增 0.3.0 条目；ⓓ 是否把 `ToolCallRepairingManager` 也挂到 DeepSeek 两个模型（当前未挂，实测它们不分片）；ⓔ 小程序是否也要「大模型展示页」（原需求定的是"只在 Web 端设计"）；ⓕ 提交与推送时机。另：调试用的 `ChatModelTest.java` 是否入库由你决定；你手写的 `.model-trigger { border: 1px }`（只写宽度没有样式，等于不画边框）保留未动。
