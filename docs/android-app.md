@@ -1,7 +1,7 @@
 # 安卓 APP 需求文档（WebView 壳）
 
 > 本文档定义 ai-agent 项目安卓 APP 化的需求、架构与注意事项。
-> 分支：`konwledge_app` ｜ 目录：`android/`
+> 创建分支：`konwledge_app` ｜ 目录：`android/`
 
 ---
 
@@ -18,12 +18,11 @@
 | 形态 | **WebView 壳** | 自研轻量 Kotlin WebView 壳（约 600 行），不引入 Capacitor / RN / Flutter |
 | 加载模式 | **远程加载** | WebView 直接加载已部署的 H5（隧道域名），nginx 反代 `/api`，**前端零改动**，H5 更新免重打包 APK |
 | 后端访问 | **内网穿透** | 复用 `deploy/cloudflare`（Cloudflare Tunnel）或 `deploy/ngrok` 方案暴露后端 |
-| 语音能力 | **仅录音转文字** | 保留麦克风语音输入（STT）；语音播报按钮维持隐藏（与网页版一致） |
+| 语音能力 | 录音转文字 + 语音播报 | 麦克风语音输入（STT）；AI 回复播报（TTS）已随 H5 放出：仅图标、无边框无底色，播报中转红表示可停止 |
 | 分发 | **自用直装** | 签名 APK 直接安装，无需软著 / 备案 / 商店审核 |
 
 ### 1.3 明确不做（本期）
 
-- 语音播报（TTS 播放按钮，保持隐藏）
 - 离线能力（无网络不可用，APP 强依赖隧道）
 - 后台推送通知
 - 应用市场上架
@@ -39,11 +38,13 @@
 |------|------|------|
 | 首页应用中心 | `/` | 知识库问答 / Manus 两个应用入口 |
 | 登录注册 | `/login` | JWT 登录、注册（图片验证码） |
-| 个人知识助手 | `/knowledge` | RAG 知识库问答、流式对话、历史会话、引用标注、录音输入 |
+| 个人知识助手 | `/knowledge` | RAG 知识库问答、流式对话、历史会话、引用标注、录音输入、**多模型切换**（输入框内左下角）、**语音播报**（仅图标） |
+| 大模型详情 | `/models` | 可切换模型的参数 / 价格 / 能力展示（首页个人中心入口进入） |
 | AI 超级智能体 | `/manus` | 流式对话、终止生成、图片展示 |
 | 修改密码 | `/change-password` | 修改密码后退出登录 |
 
 前端已完成的移动端适配（375px 断点、抽屉侧边栏、safe-area、100dvh、16px 输入字号）在 WebView 中直接生效。
+**新增功能随 H5 生效**：多模型切换、大模型详情页、语音播报等只在 `frontend/` 实现，壳层零改动，部署新 H5 即可，**无需重打 APK**。
 
 ### 2.2 APP 特有功能（壳层实现）
 
@@ -148,7 +149,7 @@ android/
 |--------|------|
 | **明文流量限制** | Android 9+ 默认禁止 HTTP 明文。隧道为 HTTPS 则无碍；直连内网 IP（如 `http://192.168.198.100:8123`）调试需 `usesCleartextTraffic="true"`（清单已配置） |
 | **免鉴权接口暴露** | `/api/files/**`、`/api/speech/**`、`/api/image-proxy` 无需 JWT。经隧道暴露公网后：tmp 文件可被枚举下载、TTS 可被刷额度、image-proxy 可被当代理（SSRF 面）。自用可接受，长期暴露建议隧道侧加访问限制 |
-| **JWT 7 天过期** | 无刷新机制，到期需重新登录；过期后 `/auth/me` 校验失败自动回登录页 |
+| **JWT 有效期 7 天、后端重启即失效** | 无刷新机制，到期需重新登录，过期后 `/auth/me` 校验失败自动回登录页；后端签名密钥**每次启动随机生成**（见 `docs/known-pitfalls.md` 陷阱 2），后端一重启所有 token 立即失效 |
 | **token 存储** | H5 存 WebView localStorage（WebView 持久化）。注意：清除 APP 数据会清掉登录态 |
 | **401 硬跳转** | 前端 401 处理是 `window.location.href='/login'`，WebView 内经 nginx `try_files` 回退 `index.html`，Vue 路由正常显示登录页，无需改前端 |
 
@@ -156,8 +157,7 @@ android/
 
 | 注意点 | 说明 |
 |--------|------|
-| **安全上下文** | `getUserMedia` 要求安全上下文。隧道 HTTPS 天然满足；本地 assets 模式需 WebViewAssetLoader（本期用远程加载，不涉及） |
-| **安全上下文（HTTPS 必须）** | `getUserMedia` 要求安全上下文，非 HTTPS 时 `navigator.mediaDevices` 为 undefined，前端提示"当前是 HTTP 环境，请改用 https:// 地址"。**排查录音问题第一步：确认地址是 https 隧道域名而非 http 内网 IP** |
+| **安全上下文（HTTPS 必须）** | `getUserMedia` 要求安全上下文，非 HTTPS 时 `navigator.mediaDevices` 为 undefined，前端提示"当前是 HTTP 环境，请改用 https:// 地址"。**排查录音问题第一步：确认地址是 https 隧道域名而非 http 内网 IP**。隧道 HTTPS 天然满足；本地 assets 模式需 WebViewAssetLoader（本期远程加载，不涉及） |
 | **双层权限** | ①manifest 声明 `RECORD_AUDIO`；②Android 6+ 运行时权限（`onPermissionRequest` 中申请）；③WebView `grant()` 放行。三层缺一不可 |
 | **⚠️ STT 上传超限（已修复）** | 后端 `spring.servlet.multipart` 原为 Spring Boot 默认 **1MB/文件**，录音 60 秒 WAV ≈1.9MB 会 400（网页版同隐患）。**已修复**：`application.yml` 增加 `spring.servlet.multipart.max-file-size: 5MB` / `max-request-size: 6MB` |
 
@@ -199,7 +199,6 @@ android/
 - [ ] 知识库问答：流式输出正常、RAG 引用卡片可展开
 - [ ] 录音：首次点击麦克风弹系统权限 → 录音 → 转文字填入输入框（HTTPS 隧道地址下）
 - [ ] 点击 AI 回复中的图片 → 全屏放大预览（背景虚化）
-- [ ] 点击图片 → 弹窗放大预览（背景虚化）
 - [ ] 移动端历史会话抽屉底部显示个人信息卡片（头像+用户名+修改密码/退出登录）
 - [ ] PDF 下载：AI 生成 PDF → 点击链接 → 系统下载通知 → 点击打开/分享
 - [ ] 外链点击 → 系统浏览器打开
@@ -208,13 +207,13 @@ android/
 
 ---
 
-## 六、安卓开发环境安装指南（本机无环境）
+## 六、安卓开发环境安装指南（换机 / 重装时参考）
 
-> 已检测：本机 Java 为 JDK 1.8、无 Gradle、无 Android SDK、无 Android Studio、无 adb。以下为安装步骤。
+> 本机环境（2026/9/29 复核）：**已装** JDK 17（`E:\IDE_Extesion_plugin_so_on\JAVA_JDK17`）与 Android SDK（`E:\IDE_Extesion_plugin_so_on\Android\Sdk`，已装 android-34），`android/local.properties` 已指向该 SDK，**已成功产出 debug APK**（`app-debug.apk`）。以下步骤保留备查。
 
 ### 6.1 安装 JDK 17
 
-项目后端也需要 Java 17（当前 `JAVA_HOME` 是 1.8，仅支持老项目）。
+后端与安卓壳都要求 Java 17（本机 JDK 17 在 `E:\IDE_Extesion_plugin_so_on\JAVA_JDK17`，构建时把 `JAVA_HOME` 指向它即可）。
 
 - 下载：Oracle JDK 17（https://www.oracle.com/java/technologies/downloads/#java17 ）或 **Eclipse Temurin 17**（https://adoptium.net ，免费，推荐）
 - 安装后设置环境变量：
@@ -280,7 +279,6 @@ gradlew.bat assembleRelease
 | 方向 | 说明 |
 |------|------|
 | 本地打包模式 | H5 打包进 APK（离线启动快），需 WebViewAssetLoader 解决安全上下文 + BASE_URL 改造 |
-| 语音播报 | 恢复播报按钮，Audio 播放经隧道 TTS 接口 |
 | 分享接收 | 系统分享文本 → 打开 APP 聊天页预填 |
 | 原生登录页 | 登录态与 Web 分离，token 存 Keystore |
 | 上架准备 | 软著、隐私政策、备案、安全检测 |

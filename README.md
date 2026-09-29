@@ -1,6 +1,6 @@
 # AI Agent 智能代理平台
 
-基于 **Spring Boot 3.5.10 + Java 17 + Vue 3** 的全栈 AI 智能代理平台。**对话模型使用 DeepSeek V4 Flash**，**向量模型使用阿里云百炼 DashScope（qwen-plus）**，支持 ReAct 模式 Agent、RAG 知识库检索、多会话聊天记忆，以及多种工具调用。
+基于 **Spring Boot 3.5.10 + Java 17 + Vue 3** 的全栈 AI 智能代理平台。**对话模型 4 个可切**（DeepSeek V4.1 Flash / V4 Pro、Qwen3.7 Plus / 3.8 Flash，清单见 `constant/ChatModelCatalog`），**向量模型使用阿里云百炼 DashScope（qwen-plus）**，支持 ReAct 模式 Agent、RAG 知识库检索、多会话聊天记忆，以及多种工具调用。
 
 ---
 
@@ -12,7 +12,8 @@
 | 🧠 **个人知识助手** | 多源知识融合问答，基于 RAG 检索笔记与收藏，支持流式对话、引用标注和切片展示 |
 | 📚 **RAG 知识库 + 引用标注** | MongoDB 向量库（自研 MongoVectorStore，应用层余弦检索），AI 回复标注来源编号 `[1]`、`[2]`，展开查看原文切片 |
 | 🔄 **引用持久化** | 引用数据随消息持久化到 MongoDB，刷新页面不丢失 |
-| 🧠 **双模型架构** | 对话使用 DeepSeek V4 Flash【@Qualifier("openAiChatModel") ChatModel chatModel】，向量化使用千问 Qwen-Plus（DashScope）【@Qualifier("dashscopeEmbeddingModel") EmbeddingModel】 |
+| 🧠 **双模型架构** | 对话用 DeepSeek【@Qualifier("openAiChatModel")】，向量化用千问 Qwen-Plus（DashScope）【@Qualifier("dashscopeEmbeddingModel")】 |
+| 🔀 **多模型切换 + 模型展示页** | 4 个可切对话模型（DeepSeek V4.1 Flash / V4 Pro、Qwen3.7 Plus / 3.8 Flash），聊天输入框左下角下拉直接切；**切换后上下文连续**（记忆按会话存取，与模型无关）；个人中心「大模型详情」进入 `/models`，展示各模型参数 / 价格 / 能力（标注官方来源与核对日期）；**三端可用**（Web 直接实现，安卓随 H5 生效，小程序独立实现） |
 | 💬 **聊天记忆** | MongoDB 持久化聊天记录，支持历史会话管理和知识库检索开关 |
 | 🖼 **图片搜索与展示** | 联网图片搜索，统一图片代理服务（ImageProxyService）绕过防盗链，前端聊天内直接显示；硬防盗链素材站黑名单过滤 |
 | 📄 **PDF 含图生成** | PDF 支持嵌入图片（Markdown 图片语法），图片下载走图片代理服务（多策略 Referer），统一缩放 |
@@ -27,7 +28,7 @@
 | 🖼 **图片点击放大预览** | 点击 AI 回复图片全屏放大（背景虚化 blur），消息区事件委托实现（DOMPurify 会剥离内联事件属性）；已取消长按保存交互 |
 | 👤 **移动端个人信息卡片** | 知识库聊天页移动端侧边栏底部：圆形头像 + 用户名 + 修改密码/退出登录（复用网页端图标与登出逻辑） |
 | 📱 **安卓 APP** | 轻量 WebView 壳（`android/` 独立 Gradle 工程，Kotlin 自研，无第三方框架），远程加载已部署 H5，支持服务器地址配置（内网穿透域名可改）、PDF 等文件原生下载与分享、录音输入 |
-| 🧩 **微信小程序端** | uni-app CLI + Vite（`miniprogram/` 独立工程，Vue3 语法编译到微信小程序）：应用中心首页（知识助手 / AI 超级智能体双入口）、流式聊天（RAG 开关 + 引用折叠展示）、历史会话管理（切换/改标题/删除/批量删除）、语音输入（STT）/播报（TTS）、图片下载本地化显示与点击预览、PDF 下载打开、服务器地址可配置 |
+| 🧩 **微信小程序端** | uni-app CLI + Vite（`miniprogram/` 独立工程，Vue3 语法编译到微信小程序）：应用中心首页（知识助手 / AI 超级智能体双入口）、流式聊天（RAG 开关 + 引用折叠展示 + **多模型切换**）、历史会话管理（切换/改标题/删除/批量删除）、语音输入（STT）/播报（TTS）、图片下载本地化显示与点击预览、PDF 下载打开、服务器地址可配置 |
 
 ---
 
@@ -39,6 +40,8 @@
 
 ![Web 知识聊天](docs/screenshots/web-chat.png)
 
+![Web 大模型详情](docs/screenshots/web-models.png)
+
 **Web 端管理页**（仅管理员可见）
 
 ![Web 知识库管理](docs/screenshots/web-knowledge-documents.png)
@@ -47,15 +50,14 @@
 
 **安卓 APP**（WebView 壳，加载已部署 H5）
 
-![APP 首页](docs/screenshots/android-home.png)
+![APP 首页](docs/screenshots/android-home.png) ![APP 聊天界面](docs/screenshots/android-chat.png)
 
-![APP 聊天界面](docs/screenshots/android-chat.png)
+![APP 历史对话](docs/screenshots/android-history.png)
 
 **微信小程序**（uni-app 编译，真机运行）
 
-![小程序首页](docs/screenshots/miniprogram-home.png)
+![小程序首页](docs/screenshots/miniprogram-home.png) ![小程序聊天界面](docs/screenshots/miniprogram-chat.png)
 
-![小程序聊天界面](docs/screenshots/miniprogram-chat.png)
 
 ---
 
@@ -180,21 +182,22 @@ ai-agent/
 │   ├── agent/             # Agent 核心（BaseAgent → ReActAgent → ToolCallAgent → Manus）
 │   ├── app/               # 业务应用（KnowledgeApp，含 RAG 流式对话）
 │   ├── chatmemory/        # 聊天记忆（MongoDB / 文件）
-│   ├── config/            # 全局配置（CORS, JWT, MCP 后备）
+│   ├── config/            # 全局配置（CORS, JWT, MCP 后备, MyChatClientConfig 四个模型 ChatClient）
+│   ├── constant/          # 常量与静态配置数据（ChatModelCatalog 模型目录）
 │   ├── controller/        # REST 接口
 │   ├── degradation/       # 统一降级框架（@Degradable 注解 + AOP 切面，五种降级策略）
 │   ├── filter/            # JWT 鉴权过滤器
-│   ├── model/             # 数据模型（含 RAG 引用标注字段）
+│   ├── model/             # 数据模型（含 RAG 引用标注字段、ChatModelDTO）
 │   ├── rag/               # RAG 检索增强（MongoDB 向量库 MongoVectorStore、文档加载、查询重写、检索优化），MongoVectorStoreConfig（基于 MongoDB）
 │   ├── repository/        # 数据访问层
-│   ├── service/           # 业务逻辑（AuthService、CaptchaService、ImageProxyService 图片代理服务）
+│   ├── service/           # 业务逻辑（AuthService、CaptchaService、ImageProxyService、ChatModelService 模型清单与解析）
 │   └── tool/              # Agent 工具（文件操作、PDF生成、图片搜索、工作流 WorkflowEngine/WorkflowTool 等）
 ├── frontend/
 │   └── src/
 │       ├── api/           # API 请求封装（含 RAG 流式接口）
 │       ├── router/        # 路由配置
-│       ├── utils/         # 工具函数
-│       └── views/         # 页面（登录、首页、个人知识助手、超级智能体）
+│       ├── utils/         # 工具函数（含 model.js 模型清单缓存与选择）
+│       └── views/         # 页面（登录、首页、个人知识助手、超级智能体、大模型详情 ModelList）
 ├── android/               # 安卓 APP 壳工程（独立 Gradle 工程，与前端解耦）
 │   └── app/src/main/java/com/example/aiagent/app/
 │       ├── MainActivity.kt          # 入口：WebView 容器
@@ -263,14 +266,15 @@ ai-agent/
 | POST | `/api/auth/register` | 注册（需图片验证码） |
 | POST | `/api/auth/change-password` | 修改密码 |
 | GET | `/api/auth/captcha` | 获取图片验证码 |
-| GET | `/api/ai/knowledge/chat/stream` | 知识助手纯文本流式对话 |
-| GET | `/api/ai/knowledge/chat/rag/stream` | 知识助手 RAG 流式对话（含引用标注） |
+| GET | `/api/ai/knowledge/chat/stream` | 知识助手纯文本流式对话（可选 `model` 参数） |
+| GET | `/api/ai/knowledge/chat/rag/stream` | 知识助手 RAG 流式对话（含引用标注，可选 `model` 参数） |
 | GET | `/api/ai/knowledge/chat/sse` | 知识助手 SSE 流式对话 |
-| GET | `/api/ai/knowledge/chat/sync` | 知识助手同步对话 |
+| GET | `/api/ai/knowledge/chat/sync` | 知识助手同步对话（可选 `model` 参数） |
 | GET | `/api/ai/knowledge/chat/history` | 历史会话列表 |
 | GET | `/api/ai/knowledge/chat/history/{chatId}` | 历史会话详情（含引用数据） |
 | PUT | `/api/ai/knowledge/chat/history/{chatId}/title` | 更新会话标题 |
 | DELETE | `/api/ai/knowledge/chat/history/{chatId}` | 删除会话 |
+| GET | `/api/ai/model/list` | 可切换的大模型清单（含可用性与默认模型，登录即可访问） |
 | GET | `/api/ai/manus/chat` | 超级智能体对话 |
 | GET | `/api/files/**` | 静态文件服务（访问 `tmp/` 下的 PDF、图片等） |
 | GET | `/api/image-proxy?url=` | 图片代理下载（绕过防盗链，黑名单站点拦截） |

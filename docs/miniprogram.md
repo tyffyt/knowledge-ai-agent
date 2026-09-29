@@ -2,12 +2,12 @@
 
 个人测试用小程序，目标是把全栈链路（小程序 → 后端 → LLM/RAG → 小程序）跑通。技术栈：**uni-app CLI + Vite（Vue 3）**，编译到微信小程序。
 
-- 分支：`knowledge-miniprogram`（从 `konwledge_app` 创建）
+- 创建分支：`knowledge-miniprogram`（从 `konwledge_app` 创建）
 - 与 Web 端（frontend/）、安卓壳（android/）互不引用，只通过后端 REST 接口交互
 
 ## 一、环境准备
 
-1. **安装微信开发者工具**（https://developers.weixin.qq.com/miniprogram/dev/devtools/download.html），用**测试号 AppID**（`touristappid`，manifest.json 已配置，无需注册正式小程序）
+1. **安装微信开发者工具**（https://developers.weixin.qq.com/miniprogram/dev/devtools/download.html）；manifest.json 已写**真实 AppID**（`wx85657988d800e96f`），**不要用游客占位 `touristappid`**——模拟器能跑、真机调试点击无响应（见技术要点 9）
 2. 后端启动（本机 8123 端口，见项目根 README/AGENTS.md 快速命令）
 3. 编译并导入：
    ```bash
@@ -33,7 +33,7 @@
 |---|---|---|
 | 应用中心首页 | 应用入口卡片（个人知识助手 / AI 超级智能体）、用户信息卡片（服务器设置 / 退出登录） | 启动页，未登录自动跳登录页 |
 | 登录页 | 登录 / 注册（图形验证码）/ 服务器地址设置 | 预填 admin/admin；注册成功自动登录 |
-| 知识聊天页 | 流式聊天（RAG 开关）、RAG 引用折叠展示、历史会话弹层（切换/改标题/删除/批量删除）、语音输入（STT）、语音播报（TTS）、图片预览、PDF 下载打开、新建对话 | 对齐 Web 端 KnowledgeChat 交互 |
+| 知识聊天页 | 流式聊天（RAG 开关）、**大模型切换**（底部弹层，切换后上下文连续）、RAG 引用折叠展示、历史会话弹层（切换/改标题/删除/批量删除）、语音输入（STT）、语音播报（TTS，仅图标）、图片预览、PDF 下载打开、新建对话 | 对齐 Web 端 KnowledgeChat 交互 |
 | Manus 页 | 纯流式聊天（SSE 帧解析）、图片预览、PDF 下载 | 对齐 Web 端 ManusChat |
 
 ## 四、架构（松耦合分层）
@@ -41,8 +41,8 @@
 ```
 src/
 ├── pages/        # 页面层：只做 UI 与交互编排
-├── components/   # 组件层：chat-bubble / history-panel / confirm-dialog / server-config
-└── utils/        # 逻辑层：config（常量）/ request（请求+流式）/ api（接口集中）/ auth / chat（会话+引用解析）/ markdown（预处理）/ tts / stt
+├── components/   # 组件层：chat-bubble / history-panel / confirm-dialog / server-config / model-picker（模型选择底部弹层）
+└── utils/        # 逻辑层：config（常量）/ request（请求+流式）/ api（接口集中）/ auth / chat（会话+引用解析）/ markdown（预处理）/ tts / stt / model（模型清单缓存+当前选择，与 Web 端同构）
 ```
 
 - 页面不直接拼 URL，全部走 `utils/api.js`
@@ -59,7 +59,7 @@ src/
    - Android：`format: 'PCM'` 拿原始帧**自封装 44 字节 WAV 头**（16kHz/16bit/单声道）上传
    - iOS：`format: 'wav'` 直出上传（**采样率/位深需真机验证**，不满足时降级同 PCM 方案）
    - ⚠️ **微信开发者工具模拟器不支持录音**，语音输入必须在真机上测（真机调试扫码，手机与电脑同一 Wi-Fi）
-7. **401 处理**：后端 JWT 密钥每次重启随机生成，**服务器重启后所有 token 失效**——请求层 401 自动清登录态跳登录页
+7. **401 处理**：后端 JWT 签名密钥每次启动随机生成，**服务器重启后所有 token 失效**（根因见 `docs/known-pitfalls.md` 陷阱 2）——请求层 401 自动清登录态跳登录页
 8. **聊天接口是 GET**：长文本会超 Tomcat 8KB 请求头上限（400），前端已限制提问 ≤4000 字
 9. **真机调试/预览要求**：必须使用**真实 AppID**（manifest.json 已配置 wx85657988d800e96f），游客模式（touristappid）真机调试会无响应；开发者工具"详情 → 本地设置"需勾选"不校验合法域名"
 10. **预览/真机构建链语法限制**：工具预览构建的语法解析器较旧——不支持 ES2020 `??`、ES2018 Unicode 属性转义 `\p{L}` 等。vite.config.js 的 `downgradeDeps` 插件对 marked 等依赖做正则替换 + es2015 降级。**产物自查**：`grep -c "??" dist/dev/mp-weixin/common/vendor.js` 应为 0
@@ -69,6 +69,9 @@ src/
 14. **真机图片不显示（安卓微信新内核）**：开发工具正常、真机空白的经典问题——image 组件加载 http+IP 图片受限（wx.request/downloadFile 网络栈不受限）。**已根治**：图片先 `uni.downloadFile` 下载到本地临时文件（并发 ≤3、缓存复用、占位图点击重试），渲染用本地路径；占位图用本地静态 `static/img-placeholder.png`（**勿用 data URI base64**：真机渲染不可靠 + mp-html 对 data: src 强制 ignore 导致 imgtap 失效）；mp-html 需传 `:preview-img="false"`（避免与 onImgTap 双重预览）
 15. **滚动到底**：scroll-into-view 目标若为最后一条消息，长消息时只滚到消息顶部（最新内容仍在屏下）。**已修复**：列表末尾固定 `bottom-anchor` 锚点元素，scroll-into-view 始终滚向锚点（先清空再设置触发），节流 150ms
 16. **页面尺寸**：聊天页 `.page` 用 `height: 100vh + 100dvh`（dvh 新内核生效、旧内核回退）+ `overflow: hidden`，避免真机整体可滚动；空状态 `v-else` 独立容器 flex 垂直水平居中（勿用 margin-top 固定值）
+17. **大模型切换**：`utils/model.js`（清单缓存 + 当前选择持久化到 storage `ai_agent_model`，与 Web 端同键名）+ `components/model-picker.vue` 底部弹层（模型名 + 厂商 + 当前打勾，未配置密钥的置灰不可选）；发送时 `api.js` 把 `model` 拼进流式接口 query，**空值不下发该参数**（否则会拼出 `model=undefined` 打到后端 400）；清单只请求一次（失败清缓存可重试）
+18. **输入区布局（与 Web 端移动端一致）**：四个控件全在输入框内——输入框独占上半部分，底部一排左下角 RAG 与模型切换**并列**、右下角语音/发送；语音/发送**无边框、底色与输入框一致**（录音/终止才用实色底 + 白图标，便于分辨状态）
+19. **单行超长文本省略号必须用 `<view>`**：`<text>` 上 `text-overflow: ellipsis` 不生效，名字不截断会把整行撑宽、把右侧按钮挤出容器（详见 `docs/known-pitfalls.md` 65）
 
 ## 六、已知限制（待真机验证）
 
