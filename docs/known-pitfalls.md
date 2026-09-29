@@ -1,8 +1,8 @@
 # 已知陷阱（踩坑记录）
 
-> 本文件是 `CLAUDE.md`「已知陷阱」章节的**详细展开**，由规则文档以索引形式引用。
+> 本文件是 `AGENTS.md`（及 `CLAUDE.md` 镜像）「已知陷阱」章节的**详细展开**，由规则文档以索引形式引用。
 > 陷阱按领域分为四组（后端 / 前端 / 脚本工具 / 移动端）。编号为**全局递增**（跨组不连续），新增陷阱沿用下一个全局编号，放入对应领域组即可。
-> 每条陷阱 = 现象 + 原因 + 修复/规避方案。写代码时遇到同名报错、相似场景，先查本文件；CLAUDE.md 只保留编号 + 一句话索引。
+> 每条陷阱 = 现象 + 原因 + 修复/规避方案。写代码时遇到同名报错、相似场景，先查本文件；`AGENTS.md`（及 `CLAUDE.md` 镜像）只保留编号 + 一句话索引。
 
 ---
 
@@ -10,7 +10,7 @@
 
 1. **PGVector 二选一**：`spring-ai-pgvector-store`（手动）与 `spring-ai-starter-vector-store-pgvector`（自动）不可同时使用
 
-2. **JWT Secret 长度**：HS256 需要 ≥256 bits
+2. **JWT 签名密钥是"每次启动随机生成"，`app.jwt.secret` 未被使用**：`AuthService` 构造时执行 `Keys.hmacShaKeyFor(Jwts.SIG.HS256.key().build().getEncoded())` —— 密钥每次启动重新生成；`config/JwtProperties` 虽然定义了 `secret`（默认占位值）并绑定了 `app.jwt`，但全项目**没有任何代码读取它**（`grep "app.jwt"` 只有 `JwtProperties` 一处声明）。**后果：每次重启后端，所有已签发 token 立即失效、用户必须重新登录**（本机自测期间反复遇到，README 与 `docs/miniprogram.md` 按现状记录了这一行为）。若日后改为读取配置密钥：**HS256 要求密钥 ≥256 bits**，长度不足会抛 `WeakKeyException`；且该配置必须走环境变量/占位符，不进仓库
 
 3. **iText 中文 PDF 字体**：`font-asian` 模块的 `STSongStd-Light` 虽然能加载但**不会嵌入 PDF**，导致用户设备无此字体时显示乱码。**修复方案：** 优先使用 Windows 系统字体路径（`C:/Windows/Fonts/msyh.ttc,0`），iText 9 的 `PdfFontFactory.createFont(String, String)` 会自动嵌入系统字体到 PDF 中，文件约 170KB。注意：
    - TTC 文件需加 `,0` 索引后缀（如 `msyh.ttc,0`）
@@ -20,6 +20,8 @@
 4. **LLM 调用限流**：调用方必须做好重试和降级
 
 5. **MCP 客户端**：默认禁用（`spring.ai.mcp.client.enabled: false`）。如需启用，需配置有效的 `mcp-servers.json`。禁用时，由 `config/McpFallbackConfig.java` 提供空的 `ToolCallbackProvider` 替代 Bean，保证 `@Resource` 注入不失败。**不要删除或修改 `McpFallbackConfig.java`，否则启动会失败。**
+   - **profile 会覆盖 enabled（2026/9/30 实测踩坑）**：`application-local.yml` 里只写了 `mcp.client.stdio.servers-configuration`、**没写 `enabled`**，而 `mcp.client.enabled` 默认是 **true** → 用 `local` profile 启动（`script\start-backend.bat` 就是这么启的）时 MCP 客户端照样开启，`application.yml` 里那句 `enabled: false` 被 profile 覆盖。表现：启动日志里 npx 拉起「高德地图 MCP Server」，**首次运行因 npx 下载包超过 MCP 客户端 20 秒初始化超时** → `TimeoutException: Did not observe any item or terminal signal within 20000ms` → `mcpSyncClients`/`toolCallbacks` 连锁失败 → **整个 Spring 上下文创建失败、应用退出**（日志里 MCP 服务器稍后才打印 "running on stdio"，属包已下载完的滞后输出，不是"其实是好的"）。
+   - **修复**：`application-local.yml` 的 `mcp.client` 下**显式加 `enabled: false`**（本机已加）。修复后实测：启动日志 `mcp/amap/npx/StdioClientTransport` 关键词 **0 行**、无 `TimeoutException`、**无 npx 子进程**、启动耗时 26s→**5.97s**。如确需 MCP，建议预热 npx 缓存后在配置里调大初始化超时
 
 9. **Spring AI Alibaba Bean 命名全是小写 dashscope**：自动注册的 Bean 名称为 `dashscopeChatModel`、`dashscopeEmbeddingModel`（**全小写 dashscope**，不是驼峰 `dashScope`）。使用 `@Qualifier` 时必须拼写准确
 
@@ -92,6 +94,16 @@
 
 59. **「禁止改自己」不等于「至少留一个管理员」**：用户管理批量改角色最初只在写入**前**做前置校验 `countAdmins() - 待降级人数 >= 1`，并认为"操作者本人禁止被改，所以操作者必定留任管理员，不会清零"——这个推理只在单请求视角成立：两个管理员 A、B **同时互降**时，两个请求各自读到 `countAdmins()=2`、待降级数 1，都判定通过并各自写入，最终库里 **0 个管理员**（知识库管理与用户管理入口全部失效，只能改库恢复；`AdminAccountChecker` 只在启动时打一行 warn，不会自动恢复）。本项目 Mongo 无事务、写路径就是 `save`，所以采用**补偿式**修复：写入后复查 `countAdmins()`，为 0 则把本次变更的用户逐个回滚为 `ADMIN` 并抛 400「至少保留一个管理员账号」（降级场景下本次变更的目标必然原为管理员，回滚是精确的），同时删掉那个不可达的前置校验。⚠️ 该并发路径**未实测**（需两个管理员精确同时操作），是代码审查阶段推导出来的
 
+61. **千问 Qwen3.7 Plus / 3.8 Flash 必须走 OpenAI 兼容模式端点**：
+    - 现象：用 DashScope 原生文本端点调这两款 → 400 `InvalidParameter: url error`；经 SDK 聚合流式时因分片解析 NPE 变成 500
+    - 原因：这两款是多模态型号，只在兼容模式（`/compatible-mode/v1`）与 multimodal 端点提供，原生 `text-generation/generation` 端点不支持
+    - 修复：`MyChatClientConfig` 里用 `OpenAiChatModel` + `OpenAiApi.builder().apiKey(...).baseUrl("https://dashscope.aliyuncs.com/compatible-mode")`（复用 `DASHSCOPE_API_KEY`），Bean 名 `qwenChatModel`；原 `dashscopeChatModel` 保持给 Manus 等既有消费方不动
+
+62. **Spring AI 1.0.0-M6 会把一个流式工具调用拆成两条**：
+    - 现象：`qwen3.8-flash` + 注册工具时回复 `回复失败：toolInput cannot be null or empty`（后端 400）；改成"过滤空参数"后变成 500 `toolName is null`
+    - 原因：M6 的流式合并把"任何带 id 的分片"当成新工具调用的开始，而 DashScope 兼容模式给 **3.8 系列**的续传分片带的是 `id:""`（3.7 系列是 `id:null`），同一个调用被劈成「有名字没参数」+「有参数没名字」两条——前者执行触发 `MethodToolCallback` 断言 → 400，后者 `toolName is null` → 500
+    - 修复：`config/ToolCallRepairingManager`（实现 `ToolCallingManager`，包一层默认实现）执行前把相邻两半拼成一条、无名字的丢弃、参数为空补 `{}`；只挂在千问 ChatModel 上（DeepSeek 不分片）。**官方 PR #6381 已修，升级 Spring AI 后删掉该类即可**
+
 ---
 
 ## 前端陷阱（Vue Web）
@@ -106,7 +118,7 @@
 
 38. **前端生产环境 BASE_URL 必须用相对路径（同源）**：`const BASE_URL = import.meta.env.DEV ? '' : 'http://localhost:8123'` 这类写法在生产构建后，外网用户浏览器里的 `localhost` 指向访问者自己的电脑，登录/聊天全部失败（只有部署机本机访问碰巧能用）。**正确写法：`const BASE_URL = ''`**，请求走同源 `/api/...`，由 nginx 反代到后端，任何设备可访问；流式接口用 `new URL(BASE_URL + '/api/...', window.location.origin)` 同样生效。**配套缓存坑**：nginx 对 js/css 设置 `expires 1y` 时，改完前端代码只重启 nginx 没用——浏览器缓存旧文件导致"还是旧页面"，必须 `npm run build` 后**硬刷新（Ctrl+F5）**或清缓存；根治方案：nginx 对 `index.html` 单独加 `Cache-Control: no-cache`（Vite 产物文件名带 hash，index.html 更新后自然拉到新 JS，静态资源仍可长缓存）
 
-39. **语音播报按钮已隐藏（KnowledgeChat.vue，演示需要）**：前端「播报」按钮通过 `v-if="false"` 隐藏，TTS 脚本逻辑（`toggleSpeech`/`speechAudio`/`stopSpeech`）与 `.speech-btn` 样式**原样保留**（隐藏后为不可达死代码，符合"保留原有代码"规则，勿误删）；恢复方法：把按钮的 `v-if="false"` 还原为 `v-if="msg.content && !(loading && i === messages.length - 1)"`
+39. **语音播报按钮（已放出，三端 UI 统一）**：该按钮曾用 `v-if="false"` 长期隐藏（"脚本与样式原样保留"，所以逻辑一直是好的）；2026/9/29 按需求放出，并统一三端 UI —— **只留图标、去边框去底色**（原为 999px 胶囊 + 淡绿底 + 淡绿描边），点图标播报/停止，播报中换 `VolumeX` 并转红（用颜色区分状态、无需文字），纯图标按钮补 `aria-label`；移动端把点击区补到 44px。小程序端 `chat-bubble.vue` 同步该样式，播报中换 `volume-off.svg`（红色）。**恢复/回退方法**：若日后又需要隐藏，把 `v-if="false"` 加回按钮即可（TTS 逻辑与样式都在）
 
 41. **移动端适配要点（前端）**：
     - **iOS Safari 聚焦输入框自动放大**：输入控件 font-size < 16px 时聚焦会自动 zoom。聊天页 `textarea` 原为 `0.95rem`（15.2px），必须在 `@media (max-width: 768px)` 下提升到 `1rem`；登录/改密输入框已是 1rem 不受影响。**不要用 `user-scalable=no` 禁缩放**（无障碍要求），靠 16px 字号根治
@@ -118,7 +130,7 @@
     - **Home 应用卡片**：`≤480px` 时改为横向布局（图标左 + 文字中 + 箭头右，`flex-direction: row`），比纵向堆叠更省空间；触控目标 ≥44px
     - 移动端检测统一用 `window.innerWidth <= 768` + `resize` 监听（App.vue / KnowledgeChat.vue 各维护 `isMobile` ref，组件卸载时移除监听），避免各组件硬编码 `window.innerWidth` 判断
 
-42. **flex 子项默认 `min-width: auto` 会把内容挤出屏幕（聊天页"内容被裁切/挤出"头号原因）**：`KnowledgeChat` 的 `.chat-container { flex-grow: 1 }` 是 `.chat-layout`（row flex）的子项，未设 `min-width: 0` 时其 min-content 宽度由输入区决定（textarea 固有宽度 `cols` 约 190px + RAG 工具栏 + 麦克风 44 + 发送 44 + gap），在窄屏（如 375px）下容器被撑到 443px，外层 `.chat-layout { overflow: hidden }` 把右侧裁掉——**右对齐的用户气泡（`align-self: flex-end`）被切出屏幕**，表现为"用户提问和 AI 回复不在同一画面、内容被挤出"。桌面宽度充裕不触发，只在移动端暴露。**修复**：①`.chat-container` 加 `min-width: 0`；②移动端 `.input-area { flex-wrap: wrap }` + `.input-toolbar { flex: 1 1 100% }` 让 RAG 工具栏独占一行，避免和 textarea/按钮挤一行；③`.bubble-content` 加 `min-width: 0` + `overflow-wrap: anywhere`；④Markdown 表格原本无样式会撑破气泡，必须加 `.markdown-body table { display: block; overflow-x: auto }`（气泡内横向滚动）。排查手段：CDP `Emulation.setDeviceMetricsOverride` + `getBoundingClientRect()` 对比容器宽与视口宽（本机 Edge/Chrome headless 可用 `--remote-debugging-port` + Node 内置 WebSocket 驱动）
+42. **flex 子项默认 `min-width: auto` 会把内容挤出屏幕（聊天页"内容被裁切/挤出"头号原因）**：`KnowledgeChat` 的 `.chat-container { flex-grow: 1 }` 是 `.chat-layout`（row flex）的子项，未设 `min-width: 0` 时其 min-content 宽度由输入区决定（textarea 固有宽度 `cols` 约 190px + RAG 工具栏 + 麦克风 44 + 发送 44 + gap），在窄屏（如 375px）下容器被撑到 443px，外层 `.chat-layout { overflow: hidden }` 把右侧裁掉——**右对齐的用户气泡（`align-self: flex-end`）被切出屏幕**，表现为"用户提问和 AI 回复不在同一画面、内容被挤出"。桌面宽度充裕不触发，只在移动端暴露。**修复**：①`.chat-container` 加 `min-width: 0`；②移动端 `.input-area { flex-wrap: wrap }` + `.input-toolbar { flex: 1 1 100% }` 让 RAG 工具栏独占一行，避免和 textarea/按钮挤一行；③`.bubble-content` 加 `min-width: 0` + `overflow-wrap: anywhere`；④Markdown 表格原本无样式会撑破气泡，必须加 `.markdown-body table { display: block; overflow-x: auto }`（气泡内横向滚动）。排查手段：CDP `Emulation.setDeviceMetricsOverride` + `getBoundingClientRect()` 对比容器宽与视口宽（本机 Edge/Chrome headless 可用 `--remote-debugging-port` + Node 内置 WebSocket 驱动）。**后续迭代**：修复②的布局已在多模型需求中调整（四控件收进输入框、工具条与语音/发送同排），现见陷阱 64；本条核心教训（`min-width: 0`）不变
 
 43. **带 /g 标志的正则 lastIndex 跨调用残留（前端工具函数隐蔽 bug）**：模块级 `const R = /.../g` 的 `.test()`/`.exec()` 会推进 `lastIndex`，**多次调用同一函数时上次的 lastIndex 会残留到下次**——若上次匹配位置超过本次字符串长度，`.test()` 直接返回 false，函数静默跳过处理（表现为"同样的输入，有时转换有时不转换"）。**修复：每次使用前必须 `R.lastIndex = 0` 重置，或在函数入口统一重置**。本项目 `frontend/src/utils/linkify.js` 即因此踩坑（连续转换多个消息时部分 URL 不链接化）。排查手段：CDP 页面内逐步执行正则观察 lastIndex
 
@@ -139,6 +151,13 @@
 55. **「重新入库」的显示条件与二次确认（不要收紧成"仅失败可见"）**：该按钮既是**失败恢复**手段，也是管理员日常的**主动重跑**入口（改完磁盘上的 md、想重建切片时用）。曾按"设计意图是失败恢复"把 `canReindex` 从 `!isRunning(doc)` 收紧为白名单 `['NOT_INDEXED','PREPROCESS_FAILED','VECTORIZE_FAILED']`，结果**已完成文档的重跑入口全消失**，用户随即反馈"按钮怎么没了"——判断可操作状态时，先确认该操作是否也是日常主动操作，别把常用入口一起收掉。**最终方案**：`canReindex` 回到 `!isRunning(doc)`（预处理中/向量化中不可点），并给**已完成**文档加二次确认弹窗——因为重跑会先删除已有切片，一旦重跑失败（如预处理报错），文档会从「已完成」掉到「失败」；未入库与失败状态本来就没有切片可丢，点了直接重跑、不弹确认。**教训**：收紧前端可见状态前，先问该操作是否属于日常流程；涉及"替换已有数据"的动作，用确认弹窗而不是隐藏入口来控风险
 
 60. **后台标签页（`document.hidden`）会被浏览器节流，别把节流现象当应用缺陷**：用自动化浏览器验证页面时若标签页不在前台（`document.visibilityState === 'hidden'`），Chrome 会节流，产生三类**假象**：①**CSS 过渡不结束** → Vue `v-if` 的离场元素长期留在 DOM 里（实测排序面板 `aria-expanded` 已是 `false`、`opacity: 0`，但元素还在，看起来像"面板没关上"）；②**`setTimeout` 被大幅延迟** → toast 到点不消失（实测两三个请求过去了，上一条 toast 仍在 DOM 中）；③**自动化的可操作性检查超时** → 报 `Timeout waiting for locator ... Do not retry the same locator`，而同一元素 `document.elementFromPoint` 命中自身（`hitIsSelf: true`）、`disabled` 状态与尺寸（22×22）都正常、`count()` 也是 1，加 `{ force: true }` 仍超时。判别与绕行：先在页面里读 `document.hidden` / `visibilityState` 确认是否被节流（`browser.capabilities.visibility.set(true)` 只控制面板可见性，**窗口不在前台时页面仍是 hidden**）；确认节流后改用页面内断言（`locator.evaluate(el => el.click())` 触发 + `querySelector` 读状态）验证行为，并在报告里如实标注环境限制——同款排序面板在可见状态下已验证正常，属环境问题而非回归
+
+63. **textarea 的上内边距属于可滚动区域，文字超长会把顶部留白"顶掉"**：
+    - 现象：输入框里文字越写越多，顶部留白越来越小、最后文字贴住框顶（看着像留白被压扁），框顶到文字的间距从小变大又变小
+    - 原因：textarea 自身的 `padding-top` 在**滚动区之内**，一旦内容超过高度上限（`max-height`）开始内部滚动，顶部内边距就随内容一起被滚出可视区
+    - 修复：把顶部留白移出滚动区——桌面端放到外层容器 `.input-composer { padding-top }`，移动端（容器是 `display: contents` 没有盒子）改用 textarea 的 `margin-top`；同时把增长上限从固定 `120px` 放宽到 `30vh`，自适应 JS 改为读 CSS 的 `max-height`（避免两处数值脱钩）
+
+64. **桌面/移动共用一份 DOM 做"控件全收进输入框"布局**：三个要点缺一不可——① 桌面端的内层容器在移动端 `display: contents`，让输入框与工具条直接成为外层输入区的排布项（否则工具条被"关"在容器里出不去）；② 工具条 `flex: 1 1 0`，在换行计算里不吃掉整行（否则麦克风/发送被挤到第三行，实测第一版就是这样）；③ 模型按钮 `width: 100%`，因为按钮是 fit-content 宽度、不跟随容器收缩，会溢出压到语音按钮上（实测与语音按钮重叠约 35px）
 
 ---
 
@@ -173,12 +192,12 @@
       - **三点菜单替换 hover 快捷按钮**：移动端无 hover，`history-item` 右侧原编辑/删除 hover 按钮必须改为常显竖三点（MoreVertical，36px 触控区），点击弹出悬浮菜单（白底圆角+阴影）：批量管理（ListChecks）/ 修改标题（Pencil）/ 删除对话（Trash2 红色）；`menuChatId` 控制打开状态，document click + 列表 @scroll 关闭（onMounted 注册/onUnmounted 移除，菜单项 @click.stop）
       - **修改标题是弹窗交互**（非行内编辑）：`editTitleVisible` + 预填当前标题 + 取消/确定（确定=绿色按钮 class `modal-btn confirm green`），确定调 `updateChatTitle` 后 fetchHistoryList + toast
       - **批量管理模式**（`batchMode` + `selectedChatIds` + `confirmBatchDelete`）：进入后**侧边栏重新排版**——隐藏新对话按钮、隐藏移动端个人信息卡片；历史项右侧变空心灰圆圈（选中→黑底白勾 Check 白色图标）；底部按钮条：取消（黑字）/ 删除 (N)（红字，N=选中数，N=0 禁用），背景 `rgba(245,247,250,0.75)` 与侧边栏一致
-      - **⚠️ 桌面端 user-dock 与批量按钮条重叠**：user-dock fixed z-index 999 在左下角，会遮挡侧边栏底部批量条（取消按钮点不到）。**当前做法（2026/9/1 起）：`showDock` 对 `/knowledge` 与 `/knowledge-documents` 一律返回 false，整页隐藏个人信息组件（不再区分是否批量模式）。历史方案已删除（2026/9/20）：早期用 `provide('chatBatchMode', ref)` + KnowledgeChat 批量模式切换时置 true/false（onUnmounted 清 false）、`showDock` 读 `&& !chatBatchMode.value`；9/1 改成按路由整页隐藏后，该信号的唯一读取点消失、只剩写入，成为只写不读的死代码，已于 2026/9/20 删除（共 8 行）。若日后要让桌面端 dock 回来并按批量模式隐藏，需重建等价信号（照 `isSidebarOpen` 那套 provide/inject 写）或改走侧边栏底部卡片**——批量管理界面隐藏"个人信息组件"（桌面 dock 即个人信息组件）符合需求语义。移动端 dock 本就隐藏无此问题
+      - **⚠️ 桌面端 user-dock 与批量按钮条重叠**：user-dock（fixed，`z-index:999`）在左下角，会压住侧边栏底部的批量条「取消」按钮（点不到）→ 现按路由整页隐藏个人信息组件，**受影响的页面与历史方案见陷阱 51**；移动端 dock 本就隐藏，无此问题
       - **批量删除确认弹窗**（图三样式）：标题"删除对话记录"左对齐加粗、正文"删除后内容将无法恢复，确认删除选中记录？"、取消（浅灰底黑字）+ 删除（红底 #ef4444 白字）；确认后 `batchDeleteChats(ids)` → 退出批量模式 + 若删了当前会话 `createNewChat()` + fetchHistoryList + toast；**catch 分支必须也关闭弹窗并退出批量模式**（当前实现 catch 里没退，失败时用户会被困在批量界面——已知待优化点）
     - **STT 上传 1MB 限制（已修复）**：后端 `spring.servlet.multipart` 原为 Spring Boot 默认 1MB/文件，录音上限 60 秒（16kHz 16bit 单声道）WAV ≈1.9MB 会 400。**已修复**：`application.yml` 已加 `spring.servlet.multipart.max-file-size: 5MB` / `max-request-size: 6MB`
     - **首启地址配置**：`ServerConfig` 存 SharedPreferences；trycloudflare 等免费隧道域名重启会变，设置页改地址即可，无需重打包；`ServerConfig.normalize` 补全 https:// 前缀
     - **明文流量**：Android 9+ 默认禁 HTTP 明文，manifest 已配 `usesCleartextTraffic="true"` 兜底（自用内测可接受；上架前应移除并强制 HTTPS）
-    - **构建**：`cd android && gradlew.bat assembleDebug`，产物 `app/build/outputs/apk/debug/app-debug.apk`；需要 JDK 17 + Android SDK（本机暂无，安装指南见 `docs/android-app.md` 第六节）；Gradle Wrapper 8.9 + AGP 8.5.2 + Kotlin 2.0.20
+    - **构建**：`cd android && gradlew.bat assembleDebug`，产物 `app/build/outputs/apk/debug/app-debug.apk`；需要 JDK 17 + Android SDK（**本机已具备**：JDK 17 与 Android SDK 都在 `E:\IDE_Extesion_plugin_so_on\` 下，SDK 已装 android-34，`android/local.properties` 已指向它，已成功产出 debug APK）；Gradle Wrapper 8.9 + AGP 8.5.2 + Kotlin 2.0.20
     - **版本管理**：`versionCode`（整数递增）/ `versionName`（如 1.0.0）在 `app/build.gradle.kts`；release keystore 必须备份（丢失无法覆盖升级）
 
 48. **微信小程序端（miniprogram/ 目录，uni-app CLI + Vite + Vue3，分支 knowledge-miniprogram）要点**：
@@ -195,3 +214,8 @@
     - **真机图片不显示的根治方案（关键）**：安卓真机微信新内核限制 `image` 组件加载 **http + IP 地址**图片（开发者工具/模拟器正常、真机空白），但 `wx.request`/`downloadFile` 网络栈不受限制（聊天流式能通即证明）。**修复（utils/image-loader.js）**：图片不交给 mp-html 内嵌 image 组件直接加载 http 代理地址，改为流结束后 `uni.downloadFile` 下载到本地临时文件（并发 ≤3），渲染时 img src 用**本地路径**；未下载完成显示**本地静态占位图** `static/img-placeholder.png`（⚠️ **不能用 base64 data URI 占位**：真机 image 组件对 data URI 渲染不可靠，且 mp-html parser 对 src 含 `data:` 的 img 强制 `ignore`，`imgtap` 事件不触发导致"点击重试"死代码——必须用打包本地图片）；下载完成 `renderVersion++` 触发重渲染换本地路径；点击占位图重试。**mp-html 必须传 `:preview-img="false"`**（否则其自动调 previewImage 与 onImgTap 双重预览）
     - **真机图片（续）**：`proxyImageUrl` 必须同时支持 `/api/` 根相对路径图片（prompt.yml 引导 AI 用 `![描述](/api/files/download/文件名)` 展示已保存图片）——拼 `getServerRoot()` 成完整 URL，中文文件名 `encodeURIComponent`；`preloadMessageImages` 正则要同时匹配 markdown 图片语法与原生 `<img src>` 两种形式
     - **真机验证清单**：SVG 图标渲染（部分机型本地 SVG 有白屏反馈）、iOS 录音 wav 直出格式、TTS 播报（短文本一次成功即止，模型贵）
+
+65. **小程序 `<text>` 上的 `text-overflow: ellipsis` 不生效（省略号必须用 `<view>`）**：
+    - 现象：聊天输入框底排的模型名很长时不肯截断，整行被撑宽，把右侧的语音/发送挤出输入框（真机截图表现为"右下角图标溢出"）
+    - 原因：`<text>` 上不生效（项目里能正常省略的 `.tool-title`、历史项、登录输入框都用 `<view>`）
+    - 修复：把该元素换成 `<view>`，并保证收缩链完整——名字 `min-width: 0` + 省略号三件套（`overflow:hidden; white-space:nowrap; text-overflow:ellipsis`）、外层控件组 `flex: 0 1 auto; min-width: 0`。经验：小程序里凡是"单行超长要省略"的文本，一律用 `<view>` 而不是 `<text>`

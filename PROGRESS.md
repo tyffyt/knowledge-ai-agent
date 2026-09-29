@@ -4,8 +4,8 @@
 
 ## 项目状态
 
-- 当前分支：`test`。「知识库文档管理」已于 2026/9/16 合并到 `test` 并推送 `origin/test`（本地与远端同步 0/0）；2026/9/20 完成遗留问题 ⑤（触控目标 ≥44×44）与版本号升级（`0.1.1`），并按用户决定把 `test` 的功能提交 cherry-pick 到 `master`——新增 5 个提交 `044c12b`（功能）/ `02237c9`（`.editorconfig` + `.gitattributes`）/ `e9a038e`（文档同步）/ `d6bd839`（重入库入口恢复）/ `95c798a`（触控目标 + 版本号），`PROGRESS.md` 冲突按"保持删除"处理，`master` 已编译通过（`JAVA_HOME=…/JAVA_JDK17 ./mvnw -o compile` BUILD SUCCESS、79 个源文件）。**2026/9/20 用户已手动 push 两个分支**：`master` = `origin/master` = `95c798a`、`test` = `origin/test` = `0331166`，本地与远端均同步（无 ahead/behind）；临时分支 `knowledge-doc-manage` 已由用户删除。**2026/9/21 用户管理的提交与推送**：功能 `f6a5a30` + 文档 `b60b2b2` 落在临时分支 `knowledge-user-manage` 并推送 `origin/knowledge-user-manage`，随后 cherry-pick 到 `test`（`8a7ba42` / `63cdeab`，无冲突）并推送 `origin/test`（`aeb5c30..63cdeab`，普通推送非 force）；两分支内容一致，`knowledge-user-manage` 待用户删除（远端分支同理）。**2026/9/21 再补两步**：① 提交信息规则修订 `f2a9d71` 推送 `origin/test`（`d4a408e..f2a9d71`）；② 按用户要求把 `test` 的改动 cherry-pick 到 `master`——落地 4 条（`c74e0b6` ← `aeb5c30`、`ed9dd7a` ← `8a7ba42`、`0fe4cd5` ← `63cdeab`、`e0ba3d0` ← `f2a9d71`），`0331166` 与 `d4a408e` 只改 `PROGRESS.md`（master 不跟踪）故冲突解决后为空、按 `--skip` 跳过；`PROGRESS.md` 的 modify/delete 冲突一律保持删除。核对：`master` 与 `test` 排除删除类后无差异（差异恰为既定的 71 个被删文件 / 22586 行）、关键文件逐字节一致、`master` 后端编译与前端构建均通过；`master` 已推送 `origin/master`（`95c798a..e0ba3d0`，普通推送非 force）
-- 一句话现状：规则体系、子智能体、进度/版本管理全部落地并已提交推送；P2 自动化测试框架评估后放弃，测试维持手动。Web 端「知识库文档管理」（管理员门控 + 上传/删除/列表/查看/搜索 + 状态可视化 + 重新入库）已开发完成，自测与独立审查通过，**2026/9/16 用户验收通过**，三处前端问题与遗留 ③④ 修复后合并到 `test` 并推送；规则文档已同步。2026/9/20 应用户要求处理 `master`（cherry-pick 而非合并）、升级版本号并优化遗留 ⑤，存量空白/行尾统一暂缓。`master` 与 `test` 均已推送并与远端同步。**2026/9/20 又新增 Web 端「用户管理」（分支 `knowledge-user-manage`，功能提交 `f6a5a30`）**：用户列表（用户名搜索 / 排序 / 分页，密码不进接口）+ 批量授予与取消管理员（禁止改自己、保底留一个管理员），管理员专属入口位于个人中心「知识库管理」上方，版本号升到 `0.2.0`；自测、浏览器实测与两轮独立审查全部通过，**2026/9/21 用户验收通过并完成文档同步**（README 新增两张管理页截图与说明、AGENTS 陷阱 51 扩为三页并新增 57–60、known-pitfalls 详情 57–60、CHANGELOG 0.2.0）。该分支的合并/推送/删除由用户决定。除新需求外，剩余待办为：遗留 ①（应用外壳矮视口不滚动）与全站其它页面的触控目标（`chatBatchMode` 死代码已按用户决定删除；`master` 提交信息与其 PROGRESS 相关事项由用户自行处理）。`master` 与 `test` 的文档类差异、`AGENTS_BAK.md` 均已明确按"直接忽略"处理——见「下一步」与「后续优化（待办）」。
+- 当前分支：`test`（工作分支，`PROGRESS.md` 只在此分支维护）· `master`（稳定主干，不放文档类文件）。版本 `0.2.0`（`pom.xml` 与 `CHANGELOG.md` 一致）。两分支关系是**分叉**：不直接 merge（会把 `master` 已删除的语料与 skills 复活），只把 `test` 的功能提交 **cherry-pick** 过去——约定与实践命令见「下一步」与「风险 / 遗留问题」。两分支均已推送、本地与远端同步；临时分支 `knowledge-user-manage` 待删除（远端同理）。
+- 一句话现状：规则体系、子智能体、进度/版本管理均已落地；Web 端「知识库文档管理」（`0.1.0`）与「用户管理」（`0.2.0`）完成开发 + 自测 + 独立审查并经用户验收，已合入 `test` 并 cherry-pick 到 `master`。**当前需求「大模型切换 + 大模型展示页」三端已验收、文档已同步、改动尚未提交**（分支 `knowledge-switch-model`，基于 `test`）：Web 端 4 个模型可切（deepseek-flash / deepseek-v4-pro / qwen3.7-plus / qwen3.8-flash）+ `/models` 展示页；安卓为 WebView 壳（部署新 H5 即生效、免重打包）；小程序同步实现模型切换。期间顺带修掉 `qwen3.8-flash` 带工具时的流式工具调用报错（Spring AI M6 缺陷，见陷阱 62）。仍待推进的事项见「后续优化（待办）」与「下一步」。
 
 ## 需求 / 任务清单
 
@@ -48,6 +48,23 @@
 | [x] 完成 | 页面入口 | 个人中心菜单「用户管理」置于「知识库管理」**上方**，仅管理员可见；非管理员直连 URL 被守卫拦回首页并提示 |
 | [x] 完成 | 自测 | 后端 curl 全链路（401 / 403 / 分页 / 搜索 / 排序 / 两项防护 / 权限即时生效）+ 回归；前端 build + 浏览器实操；独立审查（详见改动记录：另修复审查发现的 4 项缺陷） |
 
+### 本次需求—— 大模型切换 + 大模型展示页｜**三端已验收、文档已同步，改动待提交**（2026/9/28–29，分支 `knowledge-switch-model`）
+
+> 计划清单：`docs/plans/switch-model.md`（未纳入版本管理）
+
+| 状态 | 任务 | 说明 / 验收点 |
+|------|------|--------------|
+| [x] 完成 | 模型清单（4 个） | `deepseek-flash` / `deepseek-v4-pro` / `qwen3.7-plus` / `qwen3.8-flash`，一个模型一个 ChatClient Bean，Bean 名 = 模型 key；默认 `deepseek-flash`（与改动前行为一致） |
+| [x] 完成 | 聊天框模型下拉框 | 位置在输入框工具栏、**RAG 知识库开关左侧**；收起态显示当前模型名，展开态列出全部并给当前项打勾；不可用项置灰 +「未配置密钥」提示 |
+| [x] 完成 | 模型选择的保持 | 仅存浏览器本地（localStorage）全局生效，刷新/重开页面不丢；对话记忆按 chatId 存在于 MongoDB、与模型无关，**切换后上下文天然连续** |
+| [x] 完成 | 后端切换能力 | 两个流式接口（无 RAG / 有 RAG）加可选 `model` 参数，未知或不可用模型返回 400 + 中文提示；不传时代码路径与行为完全同改动前（App / 小程序零改动） |
+| [x] 完成 | 模型展示页 `/models` | 纯展示无操作：官方名 / 型号 key / 厂商 / 简介 / 技术参数（上下文·最大输入·最大输出·最大思维链·限流）/ 价格（按各厂商口径分档）/ 能力标签 / 数据来源链接 + 核对日期；未配密钥打「未配置密钥」标签 |
+| [x] 完成 | 页面入口 | 个人中心下拉新增「大模型」，**所有登录用户可见**（不设管理员门槛），入口排在「修改密码」之前；桌面端 `/knowledge` 因既有临时隐藏 dock（陷阱 51）看不到该入口 |
+| [x] 完成 | 新旧两模式可切换 | `KnowledgeApp` 原构造器整体注解保留标注「模式一（备用）」，新增「模式二」构造器；唯一取用点 `resolveChatClient(String model)`，切换只需注释/放开构造器 + 一行 return，注释里附「切回模式一」步骤清单 |
+| [x] 完成 | 自测 | 后端：`mvnw -o test-compile` 通过、启动无 Bean 冲突、4 模型逐个 curl（无 RAG + RAG）、**同一 chatId 跨模型追问验证记忆连续**、未知模型 400、旧 `sse`/`sse/emitter` 回归、登录/历史/文档/用户接口回归；前端 `npm run build` + 浏览器实操（下拉开合 3 条关闭路径、↑↓/Enter 键盘操作、localStorage 持久化、请求 URL 确认带 `model=`、320/375/1280 三档无横向溢出、展示页 4 张卡与入口跳转） |
+| [x] 完成 | 独立验证 + 审查 | 独立功能验证 A–K 全通过（含跨模型记忆连续：deepseek 记 4271 → 切千问答出 4271）；独立代码审查无 P0/P1，2 个 P2（不可用模型不回退、清单晚到不重定位/无高亮）+ 若干 P3 已按条修复，1 条不成立（App.vue 缩进经逐字符核对与相邻按钮一致）已驳回 |
+| [x] 完成 | 用户验收发现的缺陷修复 | **`qwen3.8-flash` + 工具报 `toolInput cannot be null or empty`**：根因是 Spring AI 1.0.0-M6 的流式合并缺陷（官方 PR #6381 已修）把该模型的工具调用劈成两半，新增 `config/ToolCallRepairingManager` 拼接修复并挂在千问 ChatModel 上；原失败场景两条、3 个模型回归、RAG、跨模型记忆连续全部复测通过，后端日志零 ERROR |
+
 ### 前端问题修复（2026/9/16）
 
 | 状态 | 问题现象 | 根因 | 处理方式 |
@@ -84,6 +101,16 @@
 
 | 日期 | 改动 | 涉及文件/模块 | 是否已测/已审 |
 |------|------|--------------|--------------|
+| 2026/9/30 | **规则文档审计（查漏补缺 + 去重）**：修正 4 处过期内容——陷阱 2「JWT Secret 长度」改写为实际行为（密钥启动随机生成、`app.jwt.secret` 未被使用、重启即失效），小程序文档仍写着用游客 `touristappid`（与真机要求矛盾），安卓文档称本机无 SDK/JDK 1.8（实际已装且已出 APK），陷阱 47 的「user-dock 遮挡」与陷阱 51 重复；删除 rules-template 的 `CLAUDE.md` 单文件旧称谓（改为 AGENTS.md 主 + CLAUDE.md 镜像）；AGENTS 去重（文档同步规则、敏感配置与 Git 排除清单、自检清单 4 项并为 2 项）并补入「新功能先规划后开发」；本文件合并「项目状态」两段重复叙述、清理已闭环的「下一步」条目 | AGENTS.md / CLAUDE.md / docs/known-pitfalls.md / docs/miniprogram.md / docs/android-app.md / docs/rules-template.md / PROGRESS.md | 文档类改动（陷阱编号交叉校验 65↔65、AGENTS 与 CLAUDE 逐字节一致；无 git 操作） |
+| 2026/9/29 | **文档审计与同步（按你确认范围）**：修正四处事实错误——AGENTS/README 头部的单模型表述、android-app 播报三处过期描述、播报按钮移动端点击区实为 38px（CSS 补到 44px）；以 AGENTS.md 为准重建 CLAUDE.md 并把「同步 CLAUDE」「PROGRESS 记录抓重点」写进维护规则；本文件 9/28–29 记录压缩为要点 | 改 AGENTS/CLAUDE/README/android-app/miniprogram/known-pitfalls/PROGRESS 与 Web 聊天页 CSS | 是（陷阱编号交叉校验 65↔65 对齐；前端构建通过；无 git 操作） |
+| 2026/9/29 | **语音播报放出 + 三端 UI 统一**：Web 端去掉播报按钮的 `v-if="false"` 并去掉文字，三端统一为仅图标、无边框无底色；播报中图标转红（Web 换 VolumeX、小程序换新增的 volume-off.svg）表示可停止，纯图标按钮补 aria-label。安卓随 H5 生效、壳层零改动 | 改 Web 聊天页、小程序消息气泡；新增小程序 volume-off.svg | 是（TTS 接口 curl 冒烟 200；Web 实测播报、停止、复位正常；小程序编译通过，真机听感待验） |
+| 2026/9/29 | **小程序输入框一行溢出修复**：模型名用 `<text>` 导致省略号不生效、整行被撑宽，把语音/发送挤出输入框；改为 `<view>` 并允许控件组收缩，名字超长走省略号（见陷阱 65） | 改小程序聊天页输入区 | 是（小程序编译与产物核对通过；按 375px 计算名字可用约 120px；真机待验） |
+| 2026/9/29 | **Web 端输入区压低（三轮）**：输入框改单行起始 + 高度自适应（随内容长高、上限 30vh、清空回落），控件与内边距逐轮收紧，整高 120px→75px；期间一度加宽屏限宽居中，按反馈撤销；另修「文字超长后顶部留白被滚掉」（顶部留白移出滚动区，见陷阱 63） | 改 Web 聊天页 | 是（三档宽屏 + 手机宽度实测无溢出；自适应与留白恒定验证通过；构建通过） |
+| 2026/9/28 | **千问模型名去前缀 + 移动端四控件收进输入框**：后端千问 displayName 去掉「千问」（重启生效）；移动端 RAG 文案改「RAG」，四个控件全收进输入框——左下 RAG 与模型并列、右下语音/发送去边框同底色；中间一版曾按框选移到输入框外左下角纵排，随后按新要求收回框内；修掉工具条换行与按钮溢出两个布局问题 | 改后端模型目录、Web 聊天页、小程序聊天页；新增小程序发送图标 | 是（后端编译、小程序编译、手机与桌面实测；布局要点见陷阱 64） |
+| 2026/9/28 | **安卓端与小程序端同步多模型切换**：安卓为 WebView 壳零改动（部署新 H5 即可，无需重打包）；小程序新增模型状态管理、底部选择弹层与输入框切换，发送带 model 参数（空值不下发） | 小程序新增 5 个文件，改 Web/小程序共 6 个文件 | 部分（小程序编译与产物自查通过、真机待验；手机宽度 H5 实测通过） |
+| 2026/9/28 | **Web 聊天输入区结构改造**：模型切换与知识库检索从输入框上方工具栏移入输入框内部（输入框在上、底部工具条在下，共用边框聚焦高亮），模型面板改与按钮右缘对齐 | 改 Web 聊天页 | 是（构建通过，桌面与手机宽度实测） |
+| 2026/9/28 | **修复 qwen3.8-flash + 工具报 toolInput cannot be null or empty**：根因是 Spring AI M6 流式合并缺陷把一个工具调用拆成两条（官方 PR #6381 已修），新增拼接修复类挂千问模型（DeepSeek 不分片未挂），升级 Spring AI 后可删 | 新增后端 ToolCallRepairingManager；改模型配置 | 是（原失败场景转 200 且工具真实执行；三模型带工具、RAG、跨模型记忆回归全过；详见陷阱 62） |
+| 2026/9/28 | **Web 端多模型切换 + 大模型展示页落地**（本次需求主体）：后端一模型一 ChatClient Bean + 模型目录/服务/接口，KnowledgeApp 按模型解析（原构造器注解保留为模式一备用）；前端模型下拉、/models 展示页与个人中心入口；关键修正：千问两款改走 DashScope OpenAI 兼容模式端点（原生端点不支持，见陷阱 61） | 新增后端 4 类、前端 2 文件；改 7 个既有文件 | 是（后端全链路 curl + 跨模型记忆连续；前端构建 + 浏览器实操；独立测试与审查通过，2 个 P2 已修） |
 | 2026/9/21 | **`test` → `master` cherry-pick 并推送 `master`**：把 `ce554e2` 之后的 6 条提交 pick 到 `master`，落地 4 条（`c74e0b6` 删除 chatBatchMode 死代码 / `ed9dd7a` 用户管理功能 / `0fe4cd5` 文档同步 + 两张管理页截图 / `e0ba3d0` 提交信息规则），`0331166` 与 `d4a408e`（只改 `PROGRESS.md`）在冲突解决后为空、按 `--skip` 跳过；`PROGRESS.md` 在 `master` 上不存在，4 次 modify/delete 冲突一律保持删除（与 9/20 同法）。核对：`git diff --name-status test master` 排除删除类后为空、差异恰为既定的 71 个被删文件（22586 行）、8 个关键文件（含新截图）逐字节一致、`mvnw -o compile` 退出码 0、`npm run build` 产物哈希与 test 一致。`master` 已推送 `origin/master`（`95c798a..e0ba3d0`，非 force） | `master` 分支、`PROGRESS.md` | 是（差异核对 + 编译构建 + 产物哈希比对；按既定安排 master 不含 skills / notes / document / PROGRESS.md 四类文件，切到 master 时工作区会缺这些文件、切回 test 自动恢复） |
 | 2026/9/21 | **提交信息规则修订（按用户反馈，两条）**：① 首行与第 1 条之间**不要空行**——我套用了英文"标题 + 空行 + 正文"的习惯，而项目既有提交（`aeb5c30` / `ce554e2` / `8c0b116`）都是首行紧接 `1.`；② 提交信息**要简洁、只写重点**——我此前的信息过长、堆了不少类名/方法与操作细节。两条规则已写入 `AGENTS.md`「Git 提交规则」并各附一组 ❌/✅ 对照示例，`CLAUDE.md` 同步（两份规则文档需保持一致）。按用户要求，先前那条**未推送**的规则提交已 `git reset --soft` 撤回，与本次合并为一条简洁提交（远端历史未受影响，无需 force push）。**历史提交不改写**：本会话的 `f6a5a30` / `b60b2b2` / `8a7ba42` / `63cdeab` / `d4a408e` 与历史 `cd6be5b` 仍带空行且信息偏长，改写需 rebase + force push（用户要求禁止），故保持原样 | `AGENTS.md`、`CLAUDE.md`、`PROGRESS.md` | 文档类改动（纯格式规则，不影响代码与功能） |
 | 2026/9/21 | **用户管理功能文档同步（按用户要求，未做 git 操作）**：① `README.md`——「界面预览」在 Web 端下新增「Web 端管理页（仅管理员可见）」两张截图（`docs/screenshots/web-knowledge-documents.png` / `web-user-manage.png`，由用户提供的 JPG 用 PIL 转 PNG 入库、保持 2560px 原分辨率）；「功能特性」表新增「用户管理（管理员）」一行；新增「👥 用户管理（管理员）」章节（入口/列表字段/批量授予与撤销/自我保护与保底/权限即时生效 + 首次部署无管理员时的手工引导）；② `AGENTS.md`——陷阱 51 由"两页隐藏 dock"扩为三页（补 `/user-manage`），索引新增 57（Mongo 分页须加唯一二级键）/ 58（超大页码偏移溢出）/ 59（禁止改自己≠至少留一个管理员）/ 60（后台标签页节流影响验证）；③ `docs/known-pitfalls.md`——详情 51 同步、新增 57–60 详情（含实测数据、边界值与未实测部分的说明）；④ `PROGRESS.md`——需求清单置为完成、改动记录、后续优化（批量机制描述符化 + 批量改用户名四项前置条件）、遗留与下一步同步 | `README.md`、`AGENTS.md`、`docs/known-pitfalls.md`、`PROGRESS.md`、`docs/screenshots/web-knowledge-documents.png`、`docs/screenshots/web-user-manage.png` | 文档类改动（截图取自用户实测页面；待用户核查后再做提交） |
@@ -105,6 +132,14 @@
 ## 风险 / 遗留问题
 
 - 🔴 **打包成 jar 部署后无法在线管理知识库文档**：`app.knowledge.document-dir` 默认指向源码目录 `src/main/resources/document`，jar 内该目录只读 → 上传与删除会失败（列表、查看仍正常）。要支持线上管理，把该配置指向可写目录即可，无需改代码。注意该配置写在 `src/main/resources/application.yml`（该文件被 `.gitignore` 忽略、不入库），代码里 `@Value` 已带同名默认值，因此换机器也能正常工作
+- ⚠️ **千问端点差异（本次踩到的硬约束，后续加模型必看）**：`dashscopeChatModel`（Spring AI Alibaba 的 `DashScopeChatModel`）走千问**原生文本端点** `/api/v1/services/aigc/text-generation/generation`，实测该端点**只服务纯文本模型**（可用：`qwen-plus`/`qwen-max`/`qwen-turbo`/`qwen3-max`/`qwen3.7-max`）；千问 3.7/3.8 系列的 **Plus/Flash 是多模态模型**，只在 `multimodal-generation` 与 **OpenAI 兼容模式**端点上提供，原生端点对它们返回 `InvalidParameter: url error`（SDK 随后在聚合流式分片时 `output()` 为 null 抛 NPE → 接口 500）。本次千问两款因此改用 `OpenAiChatModel` 指向 `https://dashscope.aliyuncs.com/compatible-mode`（复用 `DASHSCOPE_API_KEY`，可用 `spring.ai.dashscope.compatible-base-url` 覆盖），顺带与 DeepSeek 统一为 OpenAI 协议；**将来新增千问型号前先确认它在哪个端点**，别再往原生端点加
+- ⚠️ **`available` 降级分支在当前环境实际不可达**：`spring.ai.dashscope.api-key: ${DASHSCOPE_API_KEY}` 无默认值，未配置时应用启动即失败，所以「清单标记为不可用」只在密钥被显式置空时才可能触发；该分支仅做了代码级防御，未做运行时验证
+- ⚠️ **回滚到「模式一」须知**：模式一是单一模型固定 DeepSeek，`model` 参数被忽略，**前端模型下拉框不会真的切换模型**（会显示已选但实际仍走 DeepSeek）。切换步骤写在 `KnowledgeApp` 的注释块里（放开模式一构造器 + `chatClient` 字段 → 注释模式二构造器 → 放开 `resolveChatClient` 里的模式一 return）
+- ⚠️ **既有缺陷（本次发现，与本次改动无关、未修）**：`service/AuthService.java:29` 用 `Jwts.SIG.HS256.key().build()` 每次启动随机生成签名密钥，`application.yml:95` 的 `app.jwt.secret` **根本没被使用** → **每次重启后端，所有已签发 token 立即失效、用户必须重新登录**（本机自测期间反复遇到）。是否修由用户决定（详见 `docs/known-pitfalls.md` 陷阱 2）
+- ⚠️ **陷阱 60 影响了本次浏览器验证**：验证期间 IAB 页面 `document.visibilityState === "hidden"`（从终端驱动时无法置为前台），后台标签页会节流 `requestAnimationFrame`，导致 Vue `<Transition>` 的帧回调不执行 → 面板元素以 `opacity: 0` + `enter-from` 卡在 DOM 里（**用户不可见**）。已用页面可见时的那轮实测证伪了"代码缺陷"：三条关闭路径（再次点击/点外部/Esc）当时均读到元素被移除。**结论：后续验证页面过渡/动画行为前必须先确认 `document.visibilityState`，否则会误判成代码 bug**
+- ⚠️ **Spring AI 1.0.0-M6 流式工具调用合并缺陷（已用 `ToolCallRepairingManager` 绕过，升级 Spring AI 后可删）**：M6 的流式合并把"任何带 id 的分片"当作新工具调用的开始（官方 **PR #6381** 已改为按必填的 `index` 合并）。DashScope 兼容模式对 **qwen3.8 系列**的续传分片发 `"id": ""`（空串，而非 3.7 系列的 `null`），导致**同一个工具调用被劈成两条**：「有名称无参数」+「无名称有参数」。前者被 `MethodToolCallback` 的 `toolInput cannot be null or empty` 断言拦下（→ 前端显示"回复失败：toolInput cannot be null or empty"，HTTP 400），把前者过滤掉后后者又因 `toolName is null` 抛 NPE（HTTP 500）——所以**纯过滤不够，必须按顺序把两半拼回一条**。当前实现挂在千问 ChatModel 上（DeepSeek 未受影响故未挂）；**将来升级 Spring AI 到含 #6381 的版本后，本类与其挂载应一并删除**。另外注意：本缺陷只在模型**真的决定调用工具**时触发，不调工具时该模型一切正常
+- ⚠️ 长文本走 GET query 被 Tomcat 拦截（陷阱 30）为**既有问题**，本次未改：约 900 个中文字（URL 编码约 8KB）起会被 Tomcat 返回 HTML 400；前端新增的 `readErrorMessage` 会把它兜底成中文「请求失败（400）」，比改动前的英文 `statusText` 有改善
+- ⚠️ 千问 RAG 回复是否展示引用切片，取决于该模型自身是否输出 `[n]` 标注（既有门控逻辑，陷阱 46）：实测千问本次未打标，故未下发引用区——不是本次改动引入
 - ⚠️ 管理页「已入库」切片数来自 MongoDB 向量集合；若把 `conditionProperty.ai.bean-type` 切到 `memoryVectorStore`，状态会全部显示「未入库」
 - ⚠️ 主目录与 `yuque-sync/` 若出现同名 `.md`（只能由手工放置产生，上传会被重名校验拒绝），列表会出现两行同名、操作只作用于主目录那份。彻底修需把文档标识升级为「相对路径」，本次记为已知限制
 - ⚠️ 上传的文档会被预处理**就地覆盖**（去 HTML 内联标签 + `##` 前插分割线），上传弹窗已提示。注意 `DocumentPreprocessor` 的 HTML 标签正则会吞掉尖括号内容（如 `List<String>` → `List`），这是既有离线流水线的同一行为，本次未改其语义（如需改进属另一需求）
@@ -113,30 +148,17 @@
 - ⚠️ 本次自测留下的测试账号：`test_usermgmt`（role=0，密码 `TestUsermgmt2026`）——注册接口需要图片验证码、无法脚本批量造号，为验证"非管理员 403 / 权限即时生效"只能真注册一个；用户自行注册的 `test123123` 同为测试账号。应用未提供删除用户功能，清理需手工操作数据库
 - AGENTS_BAK.md 是用户自己的备份文档（66 KB、未跟踪）——**已明确（2026/9/20）：直接忽略**，不作为待办、不进库、不参与差异对比
 - `master` 与 `test` 的差异——**已明确（2026/9/20）：对比时直接无视**。差异只来自既定安排：`master` 不放文档类文件（`.agents/skills/**` 28 个、`notes/` 19 个、`src/main/resources/document/` 语料 23 个，共 70 个），也不跟踪 `PROGRESS.md`，都不是问题。实践约定：① 对比两分支时把这些文档路径排除，例如 `git diff test master -- . ':(exclude).agents' ':(exclude)notes' ':(exclude)src/main/resources/document' ':(exclude)PROGRESS.md'`；② `PROGRESS.md` 只在 `test` 上维护；③ 功能代码改动仍需 cherry-pick 到 `master`（文档差异之外的代码，merge 不会带过去）
-- ⚠️ `master` 上 `e9a038e`（文档同步）与 `95c798a` 的提交信息仍写着"同步/更新 `PROGRESS.md`"，但 `master` 不跟踪该文件、这部分内容并未落地（cherry-pick 时按"保持删除"处理）。是否改写这两条消息待用户决定（改写需 force-push `master`）
-- ⚠️ 工作区当前有一处未提交改动：`.gitignore`（用户自行调整格式，37 增 37 删）；按用户要求本次未核查其内容、也未纳入提交
-- AGENTS.md 与 CLAUDE.md 需保持一致（本次改动的规则文档已同步：AGENTS.md 目录结构/已知陷阱/命名与代码风格、`docs/known-pitfalls.md` 详情 51–56；CLAUDE.md 未涉及本功能，无需改动）
+- ⚠️ 工作区未提交改动：`.gitignore`（用户自行调整格式 + 追加 `.mimosa/`，按用户要求未核查其内容、也未纳入提交）与多模型功能的三端源码；本轮按用户要求未做任何 git 操作
 - 自动化测试框架（JUnit/vitest）已决定不引入（P2 评估后放弃），测试维持手动 curl/页面
 - MCP 服务暂不配置（后续可能接数据库 MCP，待定）
-- ⚠️ 用 `local` profile 启动时，`spring.ai.mcp.client.stdio` 会用 `npx` 拉起高德地图 MCP server，启动偶发超时导致启动失败（本次自测期间遇到一次，改用默认 profile 即不触发）；该配置文件里 API Key 仍是占位值 `改成你的 API Key`
-- code-test 子智能体已实跑验证生效（本次）；浏览器级 UI 交互无 headless 环境未覆盖
+- ✅ **已修复（2026/9/30）：`local` profile 下 `npx` 拉起高德地图 MCP server 导致启动失败**——根因是该 profile 未显式写 `mcp.client.enabled`（默认 true）从而覆盖主配置的 `false`，首次 npx 下载超 20s 初始化超时；现已在 `application-local.yml` 写 `enabled: false`，启动耗时 26s→5.97s、日志零 MCP 关键词（详见陷阱 5）
 - ⚠️ 本次 web 端 3 处修复已完成**浏览器级验证**：分块列表修复前后逐项量过尺寸（修复前 76 个分块各被压成 1px、修复后统一 87px 零裁切）、下拉面板定位与关闭路径、排序请求次数由 2 降 1、375px 无横向溢出；遗留 ③④ 亦用"注入延迟制造乱序 + 撤守卫反证"的方式验证。历史遗留的录音/滚动条类修复仍建议本地 `npm run dev` 复核（需真实麦克风）
-- ⚠️ `/knowledge` 与 `/knowledge-documents` 两页的个人信息组件(user-dock)已临时隐藏（前者避免与历史列表重叠，后者避免遮挡批量操作条），副作用是**桌面端 /knowledge 与两平台的 /knowledge-documents** 没有"修改密码/退出登录"入口（知识库管理页可经「返回」回首页使用；移动端 /knowledge 仍有侧边栏底部个人信息卡片，见「后续优化」）
 
 ## 下一步
 
-1. **`master` 如何处理——已定（2026/9/20）：按用户决定采用 cherry-pick**。`master` 与 `test` 是**分叉**而非落后（合并基点 `643cc13`）：`master` 侧删除了 `.agents/skills/ui-ux-pro-max/**`（28 个）、`document/` 与 `notes/` 下文档（约 35 个）、`PROGRESS.md`，合计约 2.25 万行，另有 4 个 `test` 没有的提交（9/1 两条 Web 修复、"项目优化"、9/3 API-KEY）；`test` 侧有 6 个 `master` 没有的提交。**直接合并会让 `master` 已删除的语料库与 skills 文件全部复活**，故只把 `test` 的功能提交 cherry-pick 过去：源提交 `d3200a6`（功能）/ `3a4013c`（.editorconfig + .gitattributes）/ `8c0b116`（文档同步）/ `28d5f9a`（重入库入口恢复）+ 本次 2026/9/20 的新提交；`test` 独有的 9/1 Web 修复与 9/3 API-KEY 两条 `master` 已有同内容提交，不重复 pick。`PROGRESS.md` 在 `master` 侧已删除且被 `.gitignore` 忽略，cherry-pick 遇到该文件的改动一律保持"删除"、不复活。**执行结果（2026/9/20）**：实际只 pick 了 5 条——先经内容比对确认 9/1 与 9/3 两条 `master` 已有等价内容（`git diff 36f3378 bf6cc47 -- <代码与文档文件>` 为空；`git diff cd6be5b e98fd68` 只剩 `master` 删掉的语料文件），故未重复 pick；映射为 `d3200a6`→`044c12b`、`3a4013c`→`02237c9`、`8c0b116`→`e9a038e`、`28d5f9a`→`d6bd839`、`ce554e2`→`95c798a`。冲突仅 `PROGRESS.md` 一处（modify/delete），共出现 3 次，均用 `git rm -f PROGRESS.md` 保持删除后 `--continue`；其余文件（AGENTS.md / CHANGELOG.md / README.md / docs/known-pitfalls.md / 前端 / 后端）全部干净应用。核对：`git diff --name-status test master | grep -v '^D'` 为空，即 `master` 与 `test` 仅差 71 个被删文件（skills 28 个、notes 19 个、`document/` 23 个、`PROGRESS.md`），关键文件（`KnowledgeDocuments.vue`、`pom.xml`、`CHANGELOG.md`、`AGENTS.md`、`docs/known-pitfalls.md`、`README.md`、`KnowledgeDocumentService.java`）与 `test` 逐字节一致；`JAVA_HOME=…/JAVA_JDK17 ./mvnw -o compile` 在 `master` 上 BUILD SUCCESS（79 个源文件）。**已同步并推送**：2026/9/20 由用户手动 push（`master` = `origin/master` = `95c798a`，`test` = `origin/test` = `0331166`，本地与远端均无 ahead/behind）
-2. **版本号——已完成（2026/9/20）**：`pom.xml` `0.0.1-SNAPSHOT` → `0.1.1`；`CHANGELOG.md` 中 2026-09-16 的功能条目改为 `0.1.0`，顶部新增 `0.1.1 / 2026-09-20`（触控目标优化）
-3. 规则文档同步：**已完成（2026/9/16）**——`AGENTS.md`「目录结构」章节（补 `bootstrap/`/`constant/`/`degradation/`/`demo/` 四个包 + "分层优先" + "缺包就新建"）；「已知陷阱」索引新增 52–56（flex 子项压扁、浮层 Teleport+fixed、请求时序竞态、可操作状态白名单、知识库目录写入限制）并扩写 51（覆盖两页 dock 隐藏）；「命名与代码风格」补 `.editorconfig` 与 `.gitattributes` 两条；`docs/known-pitfalls.md` 同步详情 52–56 与 51；`README.md`「知识库文档维护」补 Web 管理页说明与 jar 部署限制；`CHANGELOG.md` 补 2026-09-16 条目（2026/9/20 升版本号后该条目已改记为 `0.1.0`）
-4. **遗留问题 ①：应用外壳在较矮视口下完全不滚动**——实测 1280×720 下 `document.scrollingElement.scrollHeight === innerHeight`、设 `scrollTop` 无效，列表第 10 行与底部分页不可达（窗口够高时不暴露）。需单独排查外壳滚动方案，影响面覆盖全部页面
-5. ~~**遗留问题 ⑤：存量触控目标 <44px**~~ **已完成（2026/9/20）**：`.row-btn` / `.pager-btn` / `.icon-btn` 统一 44×44，`.check-circle` 保持 22px 视觉、可点区域扩到 44×44（详见「后续优化」与改动记录）
-6. ~~`.gitattributes` 纳入版本管理~~ **已完成（2026/9/16，提交 `3a4013c` 并已推送）**：`.gitignore` 中的忽略项已移除，`/mvnw` 与 `*.sh` 固定 LF、`*.cmd` 固定 CRLF，行尾规则对所有克隆生效
-7. 提交说明（已核实）：`src/main/resources/application.yml` 被 `.gitignore` 第 32 行忽略、未纳入版本管理，**故本次新增的配置项 `app.knowledge.document-dir` 不会入库**——代码里带了默认值 `src/main/resources/document`，其他环境不受影响；该配置项的含义已写进 README
-8. 提交说明（已核实）：`src/main/resources/document/` 整个目录被 `.gitignore` 第 26 行忽略，**运行时上传的文档不会出现在 git 工作区**（仓库里那 23 篇是忽略规则之前就已入库的跟踪文件，不受影响）
-9. 清理：~~删除临时分支 `knowledge-doc-manage`~~ **已由用户删除（2026/9/20）**，本地已无该分支
-10. ~~**待用户决定：`chatBatchMode` 死代码怎么处理**~~ **已完成（2026/9/20）：按用户决定删除**。共删 8 行——`App.vue` 的注释 + `const chatBatchMode = ref(false)` + `provide('chatBatchMode', chatBatchMode)`（3 行）；`KnowledgeChat.vue` 的注释 + `inject('chatBatchMode', ref(false))` 与 `onBatchManage` / `exitBatchMode` / `onUnmounted` 三处赋值（5 行）。它原本的用途是「进入历史对话批量管理模式时隐藏桌面端 user-dock」（引入于 `cbc2750`，2026/8/26），该读取点在 `36f3378`（2026/9/1）被"整页隐藏 dock"取代后就成了只写不读的死代码。回归已验证（见改动记录）。**将来做「个人信息入口重构」时若要恢复桌面端 dock 并按批量模式隐藏**，需重建等价的跨组件信号（照 `isSidebarOpen` 那套 provide/inject 写），或改走侧边栏底部卡片（见「后续优化（待办）」）
-11. ~~**待用户决定：`master` 上两条提交信息与实际不符**——`e9a038e`、`95c798a` 的消息写了"同步/更新 `PROGRESS.md`"，但 `master` 不跟踪该文件；改写需 force-push `master`~~ **已划掉（2026/9/20）：用户明确 `master` 里的 PROGRESS 相关内容由用户自行处理**
-12. ~~**待用户决定：`AGENTS_BAK.md` 去留**~~ **已明确（2026/9/20）：用户自己的备份文档，直接忽略**（不删、不进库、不算差异）
-13. **后续需求与长期事项**（清单见「后续优化（待办）」）：用户管理页批量机制描述符化与「批量改用户名」前置条件（用户名被当业务键，见「后续优化」）、个人信息入口重构、全站触控目标、manus 超级智能体
-14. **本次改动的 git 状态（2026/9/21 全部完成，按用户指示执行）**：① 功能 `f6a5a30` + 文档 `b60b2b2` 已推送 `origin/knowledge-user-manage`（临时分支，用户此前说后续会删除——届时远端分支需一并删除）；② cherry-pick 到 `test` 得 `8a7ba42`（功能）/ `63cdeab`（文档），规则修订为 `f2a9d71`，均已推送 `origin/test`；③ cherry-pick 到 `master` 得 `c74e0b6` / `ed9dd7a` / `0fe4cd5` / `e0ba3d0`（`0331166`、`d4a408e` 为空跳过），已推送 `origin/master`（`95c798a..e0ba3d0`）；④ 三个分支均与远端同步（`test` = `origin/test`、`master` = `origin/master`、`knowledge-user-manage` = `origin/knowledge-user-manage`）。**全程未使用 force push**，已推送的历史提交保留原始信息（未改写）。**注意**：本条 PROGRESS 记录只提交在 `test` 上（`PROGRESS.md` 按既有约定只在 `test` 维护，`master` 不跟踪该文件）。工作区唯一未提交改动仍是用户自行调整的 `.gitignore`（本次全程未纳入提交）
-15. ~~**`docs/plans/` 是否纳入版本管理（待用户决定）**~~ **已明确（2026/9/21）：不入库**——用户在本地 `.gitignore` 第 27 行加入了 `docs/plans`（该 `.gitignore` 改动由用户自行处理、本次未纳入提交），因此计划清单只作为本机过程文档，`docs/plans/` 也不进 `AGENTS.md` 的「文档地图」。约定：仅在用户**明确要求**时才把生成的计划写入该目录
+> 已闭环的历史步骤（版本号升级、规则文档同步、`chatBatchMode` 死代码、临时分支 `knowledge-doc-manage` 清理、`master` 的 cherry-pick 与推送等）见「本次改动记录」，此处只留仍待推进的事项与长期约定。
+
+1. **`master` / `test` 协作约定（2026/9/20 已定，长期有效）**：① 不 merge，只把 `test` 的功能提交 cherry-pick 到 `master`；② 对比两分支时排除 `master` 本就不放的文件（`.agents/`、`notes/`、`src/main/resources/document/`、`PROGRESS.md`），实践命令见「风险 / 遗留问题」；③ `PROGRESS.md` 只在 `test` 维护；④ `master` 上两条提交信息与内容不符（`e9a038e` / `95c798a`）按用户指示不处理（改写需 force-push）；⑤ 临时分支 `knowledge-user-manage`（本地与远端）待删除。
+2. **入库忽略约定（已核实）**：`src/main/resources/application.yml`（含密钥）与 `src/main/resources/document/`（运行时上传的文档）均被 `.gitignore` 忽略；`docs/plans/` 同样不入库（2026/9/21 用户决定）——只在用户**明确要求**时才把计划写入该目录。
+3. **后续需求与长期事项**：见「后续优化（待办）」——遗留 ① 应用外壳矮视口不滚动、全站触控目标补齐、个人信息入口重构、用户管理批量机制描述符化与「批量改用户名」前置条件、manus 超级智能体。
+4. **本次需求（多模型切换 + 大模型展示页）待你决定**：ⓐ「模式一（备用）」注解保留方案是否合适；ⓑ `AuthService` 随机 JWT 密钥的既有缺陷是否要修（见「风险 / 遗留问题」）；ⓒ 何时写 CHANGELOG 与升版本（建议 `0.2.0` → `0.3.0`，按你指示没动）；ⓓ 是否把 `ToolCallRepairingManager` 也挂到 DeepSeek 两个模型（当前未挂，实测它们不分片）；ⓔ 小程序是否也要「大模型展示页」（原需求定的是"只在 Web 端设计"）；ⓕ 提交与推送时机。另：调试用的 `ChatModelTest.java` 是否入库由你决定；你手写的 `.model-trigger { border: 1px }`（只写宽度没有样式，等于不画边框）保留未动。
