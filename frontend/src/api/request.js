@@ -178,16 +178,75 @@ function parseRagReferences(fullContent) {
 }
 
 /**
- * SSE 流式请求 - 超级智能体
+ * 创建 Manus 任务（任务制超级智能体）
+ * 后端异步执行，返回含 taskId 的任务文档
+ */
+export function createManusTask(task) {
+  return request.post('/ai/manus/task', { task })
+}
+
+/**
+ * 停止 Manus 任务
+ * 执行中的任务在当前步骤执行完毕后停止
+ */
+export function stopManusTask(taskId) {
+  return request.post(`/ai/manus/task/${taskId}/stop`)
+}
+
+/**
+ * Manus 任务列表（按更新时间倒序，最多 50 条）
+ */
+export function fetchManusTaskList() {
+  return request.get('/ai/manus/task/list')
+}
+
+/**
+ * Manus 任务详情（含计划、事件日志与最终报告，用于回放）
+ */
+export function fetchManusTask(taskId) {
+  return request.get(`/ai/manus/task/${taskId}`)
+}
+
+/**
+ * 订阅 Manus 任务事件流（SSE，帧格式 data:JSON\n\n）
+ * 每条事件：{ type, timestamp, content, toolName, toolArgs, toolResult, steps }
+ * type: plan_updated / think / tool_call / tool_result / final / error
  * 支持 AbortController 取消
  */
-export function streamManusChat(message, { onChunk, onDone, onError }, signal) {
-  const url = new URL(BASE_URL + '/api/ai/manus/chat', window.location.origin)
-  url.searchParams.set('message', message)
+export function streamManusTaskEvents(taskId, { onEvent, onDone, onError }, signal) {
+  const url = new URL(BASE_URL + '/api/ai/manus/task/' + encodeURIComponent(taskId) + '/stream', window.location.origin)
 
   const headers = {}
   const token = getToken()
   if (token) headers.Authorization = 'Bearer ' + token
+
+  let buffer = ''
+  function parseFrames(flush) {
+    // SSE 帧以空行分隔；flush 时解析剩余不完整帧（流结束时使用）
+    let frames
+    if (flush) {
+      frames = buffer.split('\n\n')
+      buffer = ''
+    } else {
+      const idx = buffer.lastIndexOf('\n\n')
+      if (idx === -1) return
+      frames = [buffer.substring(0, idx)]
+      buffer = buffer.substring(idx + 2)
+    }
+    for (const frame of frames) {
+      const dataLines = frame
+        .split('\n')
+        .filter((line) => line.startsWith('data:'))
+        .map((line) => line.substring(5))
+      if (!dataLines.length) continue
+      try {
+        const event = JSON.parse(dataLines.join('\n'))
+        onEvent?.(event)
+      } catch (e) {
+        console.warn('解析任务事件失败:', e)
+      }
+    }
+  }
 
   fetch(url.toString(), { method: 'GET', headers, signal })
     .then((res) => {
@@ -203,11 +262,12 @@ export function streamManusChat(message, { onChunk, onDone, onError }, signal) {
       function read() {
         reader.read().then(({ done, value }) => {
           if (done) {
+            parseFrames(true)
             onDone?.()
             return
           }
-          const raw = decoder.decode(value, { stream: true })
-          if (raw) onChunk?.(raw)
+          buffer += decoder.decode(value, { stream: true })
+          parseFrames(false)
           read()
         }).catch((err) => {
           if (err.name === 'AbortError') return

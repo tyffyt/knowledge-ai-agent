@@ -23,6 +23,19 @@
 | [x] 完成 | web: 语音识别友好错误提示 | 过短(<0.6s)前端拦截 + 后端 400 带 message + 前端映射中文提示 |
 | [x] 完成 | web: 历史对话滚动条与收起按钮重叠 | 收起按钮置于侧边栏右缘外侧(left:260px 不居中)，滚动条贴右侧边框 |
 | [x] 完成 | web: 隐藏历史对话中的个人信息组件 | /knowledge 页 user-dock 恒隐藏（临时方案，见后续优化） |
+| [x] 完成 | ReAct 超级智能体一期（任务化改造） | 计划 `docs/plans/react-superagent.md`；Manus 新结构（专用接口/服务/事件流/规划工具/落库 manus_task）+ Web 任务页；验收点见计划一期 |
+
+### 本次需求—— ReAct 超级智能体（一期：任务化改造）｜开发与自测完成，待用户验收（2026/10/4）
+
+> 计划清单：`docs/plans/react-superagent.md`（未纳入版本管理）。定位对标市面 ReAct 产品（任务制 + 过程可视化 + 记录可回看）；旧 `/ai/manus/chat` 接口保留（小程序在用）；数据落 `chat_memory_db` 库、集合 `manus_task`（manus_ 前缀与 chat_memory 区分）；鉴权暂不动；模型固定 dashscope（市面惯例，不做前端切换）。
+
+| 状态 | 任务 | 说明 / 验收点 |
+|------|------|--------------|
+| [x] 完成 | 后端新结构 | `model/ManusTask`（manus_task 集合：任务/计划/事件/报告）、`model/ManusTaskStatus`、`service/ManusTaskService`（编排/落库/事件推送/停止）、`agent/ManusTaskAgent`（事件化 think/act，复用 ToolCallAgent 骨架不改旧类）、`agent/ManusTaskContext`、`tool/PlanManagementTool`（planCreate/planUpdate）、`controller/ManusController`（创建/订阅流/详情/列表/停止 五接口） |
+| [x] 完成 | 结构化事件流 | SSE 每条事件 JSON（type: plan_updated/think/tool_call/tool_result/final/error + ISO 时间戳），事件先落库再推送；中途订阅先回放历史事件；终态任务回放后立即关闭；think 连续失败 3 次自动置 ERROR 防空转；步骤上限 manus.agent.max-steps 可配置（默认 20） |
+| [x] 完成 | Web 任务页 | 重写 `/manus` 页：任务输入（含示例建议）→ 计划进度面板（四态图标）→ 执行时间线（思考 Markdown/工具调用参数/结果可折叠）→ 最终报告（Markdown 渲染）→ 任务历史侧栏（状态徽标+进度，点击回放；执行中任务打开自动续流）；移动端抽屉侧栏 + 44px 触控目标 + reduce-motion 适配 |
+| [x] 完成 | 自测 | 后端编译 + 启动（6~8s）+ curl 全链路：空/超长任务 400 中文提示、创建→事件流（think/tool_call/plan_updated/tool_result/final 全类型）→详情回放→列表（状态+进度）→停止（STOPPED+final 收尾）→非法 ID 400；修复 2 个自测发现缺陷（任务未注入上下文致模型空转、finalReport 丢失）；前端 build 通过；回归：旧 manus 接口（token 下正常响应）、知识历史接口正常；SSE 线上字节 od 验证为标准 UTF-8 |
+| [x] 完成 | 独立审查 | 独立代码审查无 P0；修复 P1×2（订阅锁外读快照致事件丢失/孤儿连接、排队期停止不收尾）、P2×4（停止竞态、收尾异常兜底、断连不关闭、历史打开执行中任务不续流）+ P3×1（日志丢异常对象）；「旧代码零改动」核查通过（BaseAgent/ToolCallAgent/Manus/AiController 均未动） |
 
 ### 本次需求（仅 Web 端）—— 已完成并通过验收（2026/9/16 合并到 `test` 并推送）
 
@@ -86,7 +99,12 @@
 - **首次部署的管理员引导**：用户管理页已可自助授权，日常无需改库；但**库中一个管理员都没有时页面无法自助授权**（先有鸡还是先有蛋），此时只能用 MongoDB Compass 手工执行 `db.users.updateOne({username:"admin"},{$set:{role:NumberInt(1)}})`（本机未装 mongosh，`NumberInt` 用于明确 Int32）。取值约定：`0` 普通用户 · `1` 管理员（`role` 为 null 或非 1 一律视为普通用户）。
 - **web 历史对话页、知识库管理页与用户管理页个人信息入口重构**：为修复与历史列表/批量操作条重叠，`/knowledge`、`/knowledge-documents`、`/user-manage` 三页暂时隐藏左下角 user-dock（个人信息组件）。副作用是这三页无法再从该组件进入"修改密码/退出登录"（两个管理页可经「返回」回首页使用）。后续需重新设计个人信息入口（如侧边栏底部并入个人卡片、或放头部菜单），需同时考虑桌面端与移动端一致性，改完移除 `showDock` 中对这三条路径的临时隐藏分支。**2026/9/21 更新**：`/user-manage` 加入隐藏名单的原因与 `/knowledge-documents` 相同——该页底部同样有固定批量操作条（`z-index:100`），会被 dock（`z-index:999`）压住左端「取消」按钮。
   **2026/9/20 补充核实（区分两个组件）**：被隐藏的是桌面端固定左下角的 `.user-dock`（`App.vue` 51 行，靠 `dock-hidden` 类做 opacity/transform/pointer-events，DOM 仍在）。移动端 /knowledge 的个人信息入口是另一个组件——`KnowledgeChat.vue` 41 行侧边栏底部的 `.sidebar-footer`，条件是 `v-if="isMobile && !batchMode"`：移动端非批量模式下正常显示、进入批量管理时自动隐藏（用的是本地 `batchMode`，机制有效）。因此"无入口"这一副作用只落在**桌面端 /knowledge** 与**两平台的 /knowledge-documents**；**移动端 /knowledge 仍有入口**
-- **manus 超级智能体**：后续慢慢实现该功能
+- **manus 超级智能体**：一期（任务化改造）已于 2026/10/4 完成开发与自测；整体分期计划见 `docs/plans/react-superagent.md`（二期知识工具+交付物+任务级多轮追问、三期 agent-as-tool 子智能体、四期多端/鉴权/重试降级）
+- **Manus 前端 UI/操作统一优化（2026/10/4 用户决定：核心功能优先，UI/操作问题后置统一处理，不能遗忘）**：
+  ① **停止按钮位置**：改为输入区「开始任务」按钮在运行/排队期间变红色「停止」（对齐知识问答页"发送变终止"惯例，44px 触控达标），去掉任务卡右上角的小停止按钮（现仅 32px，审查已点名）；
+  ② **中文输入法选词回车守卫**：textarea `keydown.enter` 缺 `isComposing` 判断，选词回车会误创建任务（审查 P3；KnowledgeChat 同款既有问题，建议统一补）；
+  ③ **Manus 输入区 textarea 上内边距在自身滚动区内**：长文本内部滚动时顶部留白被顶出（陷阱 63 同款场景，ManusChat.vue）；
+  ④ 其余触控目标/对齐类问题并入上面既有的「全站触控目标补齐」与各页遗留条目统一处理
 - **知识库管理页遗留问题（2026/9/16 独立审查发现，存量）**：
   ① **应用外壳在较矮视口下不滚动**：`html, body { height:100% }` + `html, body { overflow-x:hidden }`（后者按 CSS 规范把 `overflow-y` 计算成 `auto`，body 成为滚动容器），配合 `.main-content { flex:1; min-height:0 }`（`overflow:visible`），实测 1280×720 下 `document.scrollingElement.scrollHeight === innerHeight === 720`、设 `scrollTop` 无效，列表第 10 行与底部分页不可达。需单独排查外壳滚动方案（影响面覆盖全部页面，不在本页内改）。
   ② ~~**批量操作条与左下角 user-dock 重叠**：视口宽约 769–850px 时 dock（`z-index:999`，`left:20px; bottom:20px`）压住批量条"取消"按钮文字并抢走点击。~~ **已于 2026/9/16 修复**：按用户要求直接在 `/knowledge-documents` 隐藏 user-dock（见改动记录）；`App.vue` 中 `provide('chatBatchMode')` 经 2026/9/20 核查确认为**只写不读的死代码**（`App.vue` 只 provide 不读，`KnowledgeChat.vue` 只在进入/退出批量与卸载三处写值），并已于同日**按用户决定删除**（详见改动记录）。将来重构时若要让桌面端 dock 回来并按批量模式隐藏，两条可选路子：① 重建等价的跨组件信号（照 `isSidebarOpen` 那套 provide/inject 写）；② 让桌面端也复用侧边栏底部个人信息卡片（`v-if` 去掉 `isMobile`，它读本地 `batchMode`、批量模式自动隐藏，**无需信号**；代价是桌面端侧边栏收起时该入口随之消失）。
@@ -101,6 +119,7 @@
 
 | 日期 | 改动 | 涉及文件/模块 | 是否已测/已审 |
 |------|------|--------------|--------------|
+| 2026/10/4 | **ReAct 超级智能体一期（任务化改造）落地**：把 Manus 从"一次性 SSE 聊天"升级为市面对标的任务制——创建任务→异步 ReAct 执行（规划工具分解步骤并逐步更新状态）→结构化事件流实时推送→任务/计划/事件全量落 `manus_task` 集合（chat_memory_db 库，与 chat_memory 分离）→详情回放/列表/停止；Web 端 `/manus` 页重写为任务式交互（计划面板+时间线+报告+历史侧栏）；旧接口与旧智能体类零改动（小程序不受影响）。开发中自测发现并修复 2 个缺陷（任务未注入模型上下文致空转、最终总结与 doTerminate 同响应时报告丢失）；独立审查修复 P1×2/P2×4/P3×1；按用户决策，鉴权与用户隔离暂缓（风险已登记，四期处理） | 新增后端 7 类（`ManusTask`/`ManusTaskStatus`/`ManusTaskListItem`/`ManusTaskContext`/`ManusTaskAgent`/`PlanManagementTool`/`ManusTaskService`/`ManusController`），改 `frontend/src/api/request.js`、重写 `frontend/src/views/ManusChat.vue`；计划 `docs/plans/react-superagent.md` | 是（编译+构建通过；curl 全链路含竞态场景实测；独立代码审查 P0=0，修复项已复核） |
 | 2026/9/30 | **发版收尾（补齐上次遗漏的版本记录）**：`pom.xml` `0.2.0` → `0.3.0`、CHANGELOG 新增 0.3.0 条目；AGENTS.md 补规则「用户说可以提交 = 本次需求验收通过，收尾一并写 CHANGELOG 与升版本，不挂成待决项」并同步 CLAUDE.md；本次两条提交（功能 `2efb7ed` / 文档 `f016636`）由用户在本机执行、均未推送 | AGENTS.md / CLAUDE.md / CHANGELOG.md / pom.xml / PROGRESS.md | 文档类改动（仅版本号与记录，不改代码） |
 | 2026/9/30 | **规则文档审计（查漏补缺 + 去重）**：修正 4 处过期内容——陷阱 2「JWT Secret 长度」改写为实际行为（密钥启动随机生成、`app.jwt.secret` 未被使用、重启即失效），小程序文档仍写着用游客 `touristappid`（与真机要求矛盾），安卓文档称本机无 SDK/JDK 1.8（实际已装且已出 APK），陷阱 47 的「user-dock 遮挡」与陷阱 51 重复；删除 rules-template 的 `CLAUDE.md` 单文件旧称谓（改为 AGENTS.md 主 + CLAUDE.md 镜像）；AGENTS 去重（文档同步规则、敏感配置与 Git 排除清单、自检清单 4 项并为 2 项）并补入「新功能先规划后开发」；本文件合并「项目状态」两段重复叙述、清理已闭环的「下一步」条目 | AGENTS.md / CLAUDE.md / docs/known-pitfalls.md / docs/miniprogram.md / docs/android-app.md / docs/rules-template.md / PROGRESS.md | 文档类改动（陷阱编号交叉校验 65↔65、AGENTS 与 CLAUDE 逐字节一致；无 git 操作） |
 | 2026/9/29 | **文档审计与同步（按你确认范围）**：修正四处事实错误——AGENTS/README 头部的单模型表述、android-app 播报三处过期描述、播报按钮移动端点击区实为 38px（CSS 补到 44px）；以 AGENTS.md 为准重建 CLAUDE.md 并把「同步 CLAUDE」「PROGRESS 记录抓重点」写进维护规则；本文件 9/28–29 记录压缩为要点 | 改 AGENTS/CLAUDE/README/android-app/miniprogram/known-pitfalls/PROGRESS 与 Web 聊天页 CSS | 是（陷阱编号交叉校验 65↔65 对齐；前端构建通过；无 git 操作） |
@@ -132,6 +151,12 @@
 
 ## 风险 / 遗留问题
 
+- ⚠️ **Manus 任务无用户归属（一期按用户决策暂缓，2026/10/4）**：`ManusTask` 无 username 字段，列表/详情/停止对所有登录用户开放，任意用户可看可停他人任务。用户已拍板「鉴权暂时不动」，该风险随二期/四期「鉴权与用户隔离对齐」处理（加字段+按用户过滤+归属校验）。
+- ⚠️ **「排队期被停止」场景未实测（一期）**：触发需同时占满 4 个执行线程再停第 5 个任务，约 30+ 次 LLM 调用成本，未实跑；修复路径 `finishTask(STOPPED)` 与已实测的「运行中停止」共用同一收尾逻辑，锁重入为 JVM 语义保证。二期联调时补测。
+- ⚠️ **Manus 事件广播在任务锁内做 SSE 网络写（一期取舍）**：极端慢客户端（TCP 缓冲打满不关连接）可卡住该任务的执行线程；个人项目单用户场景风险低，多端/生产化时改为「锁内快照、锁外发送」。
+- ⚠️ **Manus taskLocks 锁对象随任务数缓慢累积（一期取舍）**：终态后不移除（移除会重新打开事件重复/丢失窗口），每任务一个空锁对象（~16B），规模可控。
+- ⚠️ **Manus 任务列表全表加载后内存排序（陷阱 57 同款）**：接口上限 50 条但查询全表；同毫秒 updatedAt 顺序不稳定。任务量增长或加用户隔离时一并改为条件查询+唯一次级键。
+
 - 🔴 **打包成 jar 部署后无法在线管理知识库文档**：`app.knowledge.document-dir` 默认指向源码目录 `src/main/resources/document`，jar 内该目录只读 → 上传与删除会失败（列表、查看仍正常）。要支持线上管理，把该配置指向可写目录即可，无需改代码。注意该配置写在 `src/main/resources/application.yml`（该文件被 `.gitignore` 忽略、不入库），代码里 `@Value` 已带同名默认值，因此换机器也能正常工作
 - ⚠️ **千问端点差异（本次踩到的硬约束，后续加模型必看）**：`dashscopeChatModel`（Spring AI Alibaba 的 `DashScopeChatModel`）走千问**原生文本端点** `/api/v1/services/aigc/text-generation/generation`，实测该端点**只服务纯文本模型**（可用：`qwen-plus`/`qwen-max`/`qwen-turbo`/`qwen3-max`/`qwen3.7-max`）；千问 3.7/3.8 系列的 **Plus/Flash 是多模态模型**，只在 `multimodal-generation` 与 **OpenAI 兼容模式**端点上提供，原生端点对它们返回 `InvalidParameter: url error`（SDK 随后在聚合流式分片时 `output()` 为 null 抛 NPE → 接口 500）。本次千问两款因此改用 `OpenAiChatModel` 指向 `https://dashscope.aliyuncs.com/compatible-mode`（复用 `DASHSCOPE_API_KEY`，可用 `spring.ai.dashscope.compatible-base-url` 覆盖），顺带与 DeepSeek 统一为 OpenAI 协议；**将来新增千问型号前先确认它在哪个端点**，别再往原生端点加
 - ⚠️ **`available` 降级分支在当前环境实际不可达**：`spring.ai.dashscope.api-key: ${DASHSCOPE_API_KEY}` 无默认值，未配置时应用启动即失败，所以「清单标记为不可用」只在密钥被显式置空时才可能触发；该分支仅做了代码级防御，未做运行时验证
@@ -159,7 +184,7 @@
 
 > 已闭环的历史步骤（版本号升级、规则文档同步、`chatBatchMode` 死代码、临时分支 `knowledge-doc-manage` 清理、`master` 的 cherry-pick 与推送等）见「本次改动记录」，此处只留仍待推进的事项与长期约定。
 
-1. **`master` / `test` 协作约定（2026/9/20 已定，长期有效）**：① 不 merge，只把 `test` 的功能提交 cherry-pick 到 `master`；② 对比两分支时排除 `master` 本就不放的文件（`.agents/`、`notes/`、`src/main/resources/document/`、`PROGRESS.md`），实践命令见「风险 / 遗留问题」；③ `PROGRESS.md` 只在 `test` 维护；④ `master` 上两条提交信息与内容不符（`e9a038e` / `95c798a`）按用户指示不处理（改写需 force-push）；⑤ 临时分支 `knowledge-user-manage`（本地与远端）待删除。
-2. **入库忽略约定（已核实）**：`src/main/resources/application.yml`（含密钥）与 `src/main/resources/document/`（运行时上传的文档）均被 `.gitignore` 忽略；`docs/plans/` 同样不入库（2026/9/21 用户决定）——只在用户**明确要求**时才把计划写入该目录。
-3. **后续需求与长期事项**：见「后续优化（待办）」——遗留 ① 应用外壳矮视口不滚动、全站触控目标补齐、个人信息入口重构、用户管理批量机制描述符化与「批量改用户名」前置条件、manus 超级智能体。
-4. **本次需求（多模型切换 + 大模型展示页）待你决定**：ⓐ「模式一（备用）」注解保留方案是否合适；ⓑ `AuthService` 随机 JWT 密钥的既有缺陷是否要修（见「风险 / 遗留问题」）；ⓒ ~~何时写 CHANGELOG 与升版本~~ **已完成（2026/9/30）**：`0.2.0` → `0.3.0`，CHANGELOG 新增 0.3.0 条目；ⓓ 是否把 `ToolCallRepairingManager` 也挂到 DeepSeek 两个模型（当前未挂，实测它们不分片）；ⓔ 小程序是否也要「大模型展示页」（原需求定的是"只在 Web 端设计"）；ⓕ 提交与推送时机。另：调试用的 `ChatModelTest.java` 是否入库由你决定；你手写的 `.model-trigger { border: 1px }`（只写宽度没有样式，等于不画边框）保留未动。
+1. **ReAct 超级智能体一期——已提交（2026/10/4，用户实测通过后确认提交）**：**版本号与 CHANGELOG 按用户决定暂不升级**——ReAct 超级智能体是整体功能，等几期全部结束后再统一升版本（当前保持 0.3.0），后续会话勿提前升版；二期（知识库工具+交付物产出+任务级多轮追问+补测排队期停止）待排期，整体见 `docs/plans/react-superagent.md`。
+2. **`master` / `test` 协作约定（2026/9/20 已定，长期有效）**：① 不 merge，只把 `test` 的功能提交 cherry-pick 到 `master`；② 对比两分支时排除 `master` 本就不放的文件（`.agents/`、`notes/`、`src/main/resources/document/`、`PROGRESS.md`），实践命令见「风险 / 遗留问题」；③ `PROGRESS.md` 只在 `test` 维护；④ `master` 上两条提交信息与内容不符（`e9a038e` / `95c798a`）按用户指示不处理（改写需 force-push）；⑤ 临时分支 `knowledge-user-manage`（本地与远端）待删除。
+3. **入库忽略约定（已核实）**：`src/main/resources/application.yml`（含密钥）与 `src/main/resources/document/`（运行时上传的文档）均被 `.gitignore` 忽略；`docs/plans/` 同样不入库（2026/9/21 用户决定）——只在用户**明确要求**时才把计划写入该目录。
+4. **后续需求与长期事项**：见「后续优化（待办）」——遗留 ① 应用外壳矮视口不滚动、全站触控目标补齐、个人信息入口重构、用户管理批量机制描述符化与「批量改用户名」前置条件。
