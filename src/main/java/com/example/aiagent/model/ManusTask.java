@@ -39,8 +39,17 @@ public class ManusTask {
     // 执行事件日志（结构化事件按时间追加，用于实时推送与回放）
     private List<EventEntry> events = new ArrayList<>();
 
-    // 最终报告（任务完成时的总结文本）
+    // 最终报告（最新一轮的总结文本）
     private String finalReport;
+
+    // 历轮最终报告（多轮追问时按轮次追加，供上下文重建与回放）
+    private List<String> reports = new ArrayList<>();
+
+    // 历次用户追问（多轮对话）
+    private List<String> followUps = new ArrayList<>();
+
+    // 交付物清单（模型执行中登记产出文件）
+    private List<Deliverable> deliverables = new ArrayList<>();
 
     // 失败原因（状态为 ERROR 时记录）
     private String errorMessage;
@@ -72,7 +81,7 @@ public class ManusTask {
 
     /**
      * 执行事件条目
-     * type 取值：plan_updated / think / tool_call / tool_result / final / error
+     * type 取值：plan_updated / think / tool_call / tool_result / deliverable / user_message / final / error
      */
     @Data
     @NoArgsConstructor
@@ -85,7 +94,7 @@ public class ManusTask {
         // 事件时间（ISO-8601 字符串，前端可直接 new Date 解析）
         private String timestamp;
 
-        // 文本内容（think 的思考文本 / final 的最终报告 / error 的错误信息）
+        // 文本内容（think 的思考文本 / user_message 的追问内容 / final 的最终报告 / error 的错误信息）
         private String content;
 
         // 工具名称（tool_call / tool_result）
@@ -99,5 +108,35 @@ public class ManusTask {
 
         // 全量计划快照（plan_updated）
         private List<PlanStep> steps;
+
+        // 交付物（deliverable）
+        private Deliverable deliverable;
+    }
+
+    /**
+     * 交付物条目（任务执行中登记的产出文件）
+     */
+    @Data
+    @NoArgsConstructor
+    @AllArgsConstructor
+    public static class Deliverable {
+
+        // 展示名称
+        private String name;
+
+        // 相对 tmp 白名单根目录的路径（服务端二次校验防路径穿越）
+        private String relativePath;
+
+        // 文件类型：pdf / image / text / binary
+        private String type;
+
+        // 文件大小（字节）
+        private long size;
+
+        // 模型登记时的描述
+        private String note;
+
+        // 登记时间（ISO-8601 字符串）
+        private String registeredAt;
     }
 }

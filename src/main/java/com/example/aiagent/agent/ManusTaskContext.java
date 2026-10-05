@@ -10,7 +10,8 @@ import java.util.function.Consumer;
 /**
  * Manus 任务的运行时上下文
  * 一个任务一份实例，在执行线程、规划工具与事件推送之间共享：
- * 事件统一经 publish 回调交给 ManusTaskService（先落库再推送 SSE），停止标记供执行循环在步骤间检查
+ * 事件统一经 publish 回调交给 ManusTaskService（先落库再推送 SSE），
+ * 交付物经 registerDeliverable 回调由服务层落库并推送，停止标记供执行循环在步骤间检查
  */
 public class ManusTaskContext {
 
@@ -19,15 +20,20 @@ public class ManusTaskContext {
     // 事件发布回调（由 ManusTaskService 注入）
     private final Consumer<ManusTask.EventEntry> eventPublisher;
 
+    // 交付物登记回调（由 ManusTaskService 注入）
+    private final Consumer<ManusTask.Deliverable> deliverableRegistrar;
+
     // 停止标记（用户主动停止时置位）
     private final AtomicBoolean stopRequested = new AtomicBoolean(false);
 
     // 当前最新计划（内存副本，供规划工具读取与防重复创建判断）
     private volatile List<ManusTask.PlanStep> plan = new ArrayList<>();
 
-    public ManusTaskContext(String taskId, Consumer<ManusTask.EventEntry> eventPublisher) {
+    public ManusTaskContext(String taskId, Consumer<ManusTask.EventEntry> eventPublisher,
+                            Consumer<ManusTask.Deliverable> deliverableRegistrar) {
         this.taskId = taskId;
         this.eventPublisher = eventPublisher;
+        this.deliverableRegistrar = deliverableRegistrar;
     }
 
     public String getTaskId() {
@@ -41,6 +47,15 @@ public class ManusTaskContext {
      */
     public void publish(ManusTask.EventEntry entry) {
         eventPublisher.accept(entry);
+    }
+
+    /**
+     * 登记交付物（交给服务层落库并推送 SSE，调用前需完成路径校验）
+     *
+     * @param deliverable 交付物条目
+     */
+    public void registerDeliverable(ManusTask.Deliverable deliverable) {
+        deliverableRegistrar.accept(deliverable);
     }
 
     /**

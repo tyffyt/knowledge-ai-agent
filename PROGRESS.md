@@ -24,10 +24,28 @@
 | [x] 完成 | web: 历史对话滚动条与收起按钮重叠 | 收起按钮置于侧边栏右缘外侧(left:260px 不居中)，滚动条贴右侧边框 |
 | [x] 完成 | web: 隐藏历史对话中的个人信息组件 | /knowledge 页 user-dock 恒隐藏（临时方案，见后续优化） |
 | [x] 完成 | ReAct 超级智能体一期（任务化改造） | 计划 `docs/plans/react-superagent.md`；Manus 新结构（专用接口/服务/事件流/规划工具/落库 manus_task）+ Web 任务页；验收点见计划一期 |
+| [x] 完成 | ReAct 超级智能体二期 | 知识库检索工具（按任务注入）+ 交付物登记/预览/下载 + 任务级多轮追问（摘要重建）+ 排队期停止补测；设计见计划第七节 |
 
-### 本次需求—— ReAct 超级智能体（一期：任务化改造）｜开发与自测完成，待用户验收（2026/10/4）
+### 本次需求—— ReAct 超级智能体（二期：知识工具 + 交付物 + 多轮追问）｜开发与自测完成，待用户验收（2026/10/4）
+
+> 设计：`docs/plans/react-superagent.md` 第七节。四决策已确认：①知识库工具按任务注入不进共享池；②交付物走模型登记制+提示词强引导；③追问用摘要重建上下文；④线程池配置化补测排队期停止。一期提交 `aeb86c2` 暂不推送（用户决定）。
+
+| 状态 | 任务 | 说明 / 验收点 |
+|------|------|--------------|
+| [x] 完成 | 知识库检索工具 | `tool/KnowledgeSearchTool`（threshold 0.5/topK 3）；来源标注修正：向量库实际 metadata 键为 filename（pymongo 直查核实，无 title 键），取 title→filename 回退；内存库模式提示为空；按任务合并注入，不碰 allTools |
+| [x] 完成 | 交付物管理 | `tool/RegisterDeliverableTool`（白名单 {user.dir}/tmp/，相对路径在 pdf/download/file 子目录容错匹配同名文件——产出工具只向模型返回文件名，实测首轮因此未命中后容错解决；50MB 上限）；ManusTask 加 deliverables；事件类型 deliverable；三接口：清单/下载（attachment+UTF-8 文件名）/预览（文本/图片/PDF 放行、html/svg 拒绝、nosniff）；resolveDeliverableFile 二次校验 |
+| [x] 完成 | 任务级多轮追问 | `POST /ai/manus/task/{taskId}/message`；仅终态可追问→RUNNING；事件类型 user_message；上下文摘要重建（原任务+历次追问+历轮报告+当前计划+最近 10 条事件+本次追问）；ManusTask 加 followUps/reports；实测三轮追问 105→110 事件零重复 |
+| [x] 完成 | 前端 | 交付物卡片与清单区、预览（图片浮层/PDF 新标签）与下载（blob，5 分钟延迟 revoke+卸载统一回收）；终态任务输入框解锁追问（followUpMode）；user_message/deliverable 事件渲染；事件流订阅支持 after 增量起点（追问/续接不重复回放） |
+| [x] 完成 | 自测 | 四链路全绿：知识检索（真实文件名来源）、PDF 产出→登记→下载（173107 字节与登记一致、越界 404）、多轮追问（状态流转/运行中拒绝/三轮零重复）、排队期停止补测（pool-size=1 经环境变量 MANUS_AGENT_POOL_SIZE 生效，PENDING 停止→立即 STOPPED+final）；旧接口与知识历史回归正常 |
+| [x] 完成 | 独立审查 | 审查确认追问状态机锁配合正确、EventEntry 8 参调用一致、预览白名单无脚本执行面；修复 P1×1（追问后事件整段重复回放+交付物序号错位→subscribe 加 after 增量参数）、P2×2（白名单 startsWith 改 Path 组件级比较防 tmp2 同级目录绕过、排队期停止不再抹掉上一轮报告）+ P3×6（nosniff/类型补齐/filename 回退/判空 NPE 防护/锁内返回/死代码） |
+| [x] 完成 | 用户验收反馈修复（3 项） | ① 报告不清晰（模型把"让我整理…现在我可以…"等过程独白当报告）——系统提示词硬约束最终报告：第一句直接给结论、通篇禁止过程性表述，同款天气任务实测报告干净且结构完整；② 追问位置不显眼——user_message 卡加 User 图标/绿框/加重样式，提交后自动滚底；③ 形态面向程序员——页面重排为「任务卡→报告置顶→交付物→执行过程」，过程默认折叠成一行摘要（执行中自动展开、结束自动折叠、可手动切换），对齐市面产品"结果为主、过程可查" |
+| [x] 完成 | 用户验收反馈二轮（2 问题 + 5 优化需求） | ① 已完成任务计划步骤卡"进行中"——finishTask 对 COMPLETED 任务自动收尾计划状态（in_progress→done、todo→skipped 并注明），提示词补"doTerminate 前确保全部步骤标记完毕"；② 追问埋在过程里——**页面重构为轮次对话流**：按 user_message 事件切分轮次，每轮=灰底用户问题气泡→透明折叠过程行（仅图标+文字+箭头，参考 Claude 风格）→该轮报告（轮内 final 事件），追问自动追加新一轮，历史轮次全部保留，对话连续；③ 布局对齐知识问答页——侧栏全高、header/消息区/输入区收进右列（输入区不再横跨侧栏）；④ 左下角用户中心组件 /manus 页隐藏；⑤ 状态徽标与停止按钮移至 header |
+| [x] 完成 | 验收复验发现的两处缺陷（浏览器自动化实测定位） | ① **多轮追问实时不显示**（追问气泡/新轮过程/新报告全部要刷新才出现）——根因是前端 SSE 帧解析按 `lastIndexOf('\n\n')` 整段切分，**一个网络包到达多条帧时两条事件被拼成一个 JSON 解析失败静默丢弃**，事件缺失导致增量订阅起点偏移、追问的 user_message 被跳过轮次无法切分；修复为逐帧拆分（browser-use 注入帧日志实测确认：修复后重订阅首帧即 user_message，多帧同达正常解析）；② 追问折叠时序错位（上一轮过程被误展开/未折叠）——submitFollowUp 展开目标按当前轮数取下标（此时新事件未到达），修复后时序：上轮结束折叠→追问仅展开新轮→新轮结束折叠；③ 新一轮未列计划时误显示上一轮计划快照——轮次切分时计划置空，仅展示该轮内 planCreate/planUpdate 产生的快照。三项均经浏览器自动化全流程实测通过 |
+| [x] 完成 | 验收反馈三轮（报告质量 + 等待动画） | ① **报告仍是过程独白**（模型把"生成报告"当计划步骤，最后一条消息只剩"现在调用 doTerminate"）——提示词补丁已到极限，改**结构性方案**：任务完成时后端额外做一次无工具的收尾报告生成调用（输入=用户问题+本轮执行记录摘要，输出直接作为 finalReport，失败回退思考文本），实测 yield/wait/sleep/join 对比任务报告第一句即完整结论并带对比表格、零过程性表述；② 计划未列出时无等待反馈——执行中过程行常驻，无事件时显示"正在思考"+三点跳动动画（展开有加载占位），首个事件到达后转"正在执行" |
 
 > 计划清单：`docs/plans/react-superagent.md`（未纳入版本管理）。定位对标市面 ReAct 产品（任务制 + 过程可视化 + 记录可回看）；旧 `/ai/manus/chat` 接口保留（小程序在用）；数据落 `chat_memory_db` 库、集合 `manus_task`（manus_ 前缀与 chat_memory 区分）；鉴权暂不动；模型固定 dashscope（市面惯例，不做前端切换）。
+
+### 一期（任务化改造）任务明细——已完成并提交（`aeb86c2`）
 
 | 状态 | 任务 | 说明 / 验收点 |
 |------|------|--------------|
@@ -119,6 +137,7 @@
 
 | 日期 | 改动 | 涉及文件/模块 | 是否已测/已审 |
 |------|------|--------------|--------------|
+| 2026/10/4 | **ReAct 超级智能体二期（知识工具+交付物+多轮追问）落地**：① 知识库检索工具按任务注入（不进共享 allTools，问答行为零变化），来源标注经 pymongo 直查核实取 filename 键；② 交付物登记制——模型生成文件后调 register 登记（tmp/ 白名单+子目录容错匹配），新增清单/下载/预览三接口（Path 组件级白名单校验、类型白名单、nosniff）；③ 任务级多轮追问——终态任务可追加消息，摘要重建上下文（原任务+历次追问+历轮报告+计划+最近事件），新事件追加同一任务文档，实测三轮零重复；④ 排队期停止补测通过（线程池配置化）；⑤ 独立审查修复 P1×1（追问事件重复回放+交付物序号错位，subscribe 加 after 增量）、P2×2（Path 组件级白名单、停止不抹报告）+P3×6 | 新增 `tool/KnowledgeSearchTool`、`tool/RegisterDeliverableTool`；改 `ManusTask`/`ManusTaskContext`/`ManusTaskAgent`/`ManusTaskService`/`ManusController`/`PlanManagementTool`、`frontend/src/api/request.js`、`ManusChat.vue` | 是（编译+构建通过；四链路 curl 实测含排队补测；独立审查 P0=0） |
 | 2026/10/4 | **ReAct 超级智能体一期（任务化改造）落地**：把 Manus 从"一次性 SSE 聊天"升级为市面对标的任务制——创建任务→异步 ReAct 执行（规划工具分解步骤并逐步更新状态）→结构化事件流实时推送→任务/计划/事件全量落 `manus_task` 集合（chat_memory_db 库，与 chat_memory 分离）→详情回放/列表/停止；Web 端 `/manus` 页重写为任务式交互（计划面板+时间线+报告+历史侧栏）；旧接口与旧智能体类零改动（小程序不受影响）。开发中自测发现并修复 2 个缺陷（任务未注入模型上下文致空转、最终总结与 doTerminate 同响应时报告丢失）；独立审查修复 P1×2/P2×4/P3×1；按用户决策，鉴权与用户隔离暂缓（风险已登记，四期处理） | 新增后端 7 类（`ManusTask`/`ManusTaskStatus`/`ManusTaskListItem`/`ManusTaskContext`/`ManusTaskAgent`/`PlanManagementTool`/`ManusTaskService`/`ManusController`），改 `frontend/src/api/request.js`、重写 `frontend/src/views/ManusChat.vue`；计划 `docs/plans/react-superagent.md` | 是（编译+构建通过；curl 全链路含竞态场景实测；独立代码审查 P0=0，修复项已复核） |
 | 2026/9/30 | **发版收尾（补齐上次遗漏的版本记录）**：`pom.xml` `0.2.0` → `0.3.0`、CHANGELOG 新增 0.3.0 条目；AGENTS.md 补规则「用户说可以提交 = 本次需求验收通过，收尾一并写 CHANGELOG 与升版本，不挂成待决项」并同步 CLAUDE.md；本次两条提交（功能 `2efb7ed` / 文档 `f016636`）由用户在本机执行、均未推送 | AGENTS.md / CLAUDE.md / CHANGELOG.md / pom.xml / PROGRESS.md | 文档类改动（仅版本号与记录，不改代码） |
 | 2026/9/30 | **规则文档审计（查漏补缺 + 去重）**：修正 4 处过期内容——陷阱 2「JWT Secret 长度」改写为实际行为（密钥启动随机生成、`app.jwt.secret` 未被使用、重启即失效），小程序文档仍写着用游客 `touristappid`（与真机要求矛盾），安卓文档称本机无 SDK/JDK 1.8（实际已装且已出 APK），陷阱 47 的「user-dock 遮挡」与陷阱 51 重复；删除 rules-template 的 `CLAUDE.md` 单文件旧称谓（改为 AGENTS.md 主 + CLAUDE.md 镜像）；AGENTS 去重（文档同步规则、敏感配置与 Git 排除清单、自检清单 4 项并为 2 项）并补入「新功能先规划后开发」；本文件合并「项目状态」两段重复叙述、清理已闭环的「下一步」条目 | AGENTS.md / CLAUDE.md / docs/known-pitfalls.md / docs/miniprogram.md / docs/android-app.md / docs/rules-template.md / PROGRESS.md | 文档类改动（陷阱编号交叉校验 65↔65、AGENTS 与 CLAUDE 逐字节一致；无 git 操作） |
@@ -152,7 +171,9 @@
 ## 风险 / 遗留问题
 
 - ⚠️ **Manus 任务无用户归属（一期按用户决策暂缓，2026/10/4）**：`ManusTask` 无 username 字段，列表/详情/停止对所有登录用户开放，任意用户可看可停他人任务。用户已拍板「鉴权暂时不动」，该风险随二期/四期「鉴权与用户隔离对齐」处理（加字段+按用户过滤+归属校验）。
-- ⚠️ **「排队期被停止」场景未实测（一期）**：触发需同时占满 4 个执行线程再停第 5 个任务，约 30+ 次 LLM 调用成本，未实跑；修复路径 `finishTask(STOPPED)` 与已实测的「运行中停止」共用同一收尾逻辑，锁重入为 JVM 语义保证。二期联调时补测。
+- ⚠️ **「排队期被停止」场景未实测（一期）→ 已于二期补测通过（2026/10/4）**：线程池大小配置化（`manus.agent.pool-size`，默认 4；测试时经环境变量 `MANUS_AGENT_POOL_SIZE=1` 造排队，**注意 Maven 的 `-D` 值含空格时只有第一段进 jvmArguments**，多参数会被吞）；实测 PENDING 停止→立即 STOPPED+final 事件（stopTask 排队分支即时收尾，executeTask 出队遇 STOPPED 直接 return 防重复 final）。
+- ⚠️ **Manus 交付物/任务仍无用户归属（二期延续一期决策）**：任何登录用户可预览下载他人任务的交付物（tmp/ 白名单内文件）；随四期鉴权对齐一并处理。
+- ⚠️ **Manus 二期审查遗留 P3（未修，后续迭代处理）**：① reports 仅 COMPLETED 轮归档，STOPPED/ERROR 轮的中间成果不进追问上下文（靠最近 10 条事件兜底）；② executor.submit 在应用关闭窗口期可能抛 RejectedExecutionException 致任务卡 RUNNING（createTask 同款，需失败回写终态）；③ 追问文本的【】分段标记可被用户伪造（与原任务同信任级，无越权面，知悉即可）。
 - ⚠️ **Manus 事件广播在任务锁内做 SSE 网络写（一期取舍）**：极端慢客户端（TCP 缓冲打满不关连接）可卡住该任务的执行线程；个人项目单用户场景风险低，多端/生产化时改为「锁内快照、锁外发送」。
 - ⚠️ **Manus taskLocks 锁对象随任务数缓慢累积（一期取舍）**：终态后不移除（移除会重新打开事件重复/丢失窗口），每任务一个空锁对象（~16B），规模可控。
 - ⚠️ **Manus 任务列表全表加载后内存排序（陷阱 57 同款）**：接口上限 50 条但查询全表；同毫秒 updatedAt 顺序不稳定。任务量增长或加用户隔离时一并改为条件查询+唯一次级键。
@@ -184,7 +205,7 @@
 
 > 已闭环的历史步骤（版本号升级、规则文档同步、`chatBatchMode` 死代码、临时分支 `knowledge-doc-manage` 清理、`master` 的 cherry-pick 与推送等）见「本次改动记录」，此处只留仍待推进的事项与长期约定。
 
-1. **ReAct 超级智能体一期——已提交（2026/10/4，用户实测通过后确认提交）**：**版本号与 CHANGELOG 按用户决定暂不升级**——ReAct 超级智能体是整体功能，等几期全部结束后再统一升版本（当前保持 0.3.0），后续会话勿提前升版；二期（知识库工具+交付物产出+任务级多轮追问+补测排队期停止）待排期，整体见 `docs/plans/react-superagent.md`。
+1. **ReAct 超级智能体二期——开发与自测完成，待用户验收（2026/10/4）**：知识库检索工具、交付物登记/预览/下载、任务级多轮追问、排队期停止补测均已落地；待用户 Web 端实操（重点：追问输入框、交付物预览下载、时间线续接）。**一期提交 `aeb86c2` 与二期改动均未推送（用户决定）**；版本号与 CHANGELOG 等几期全部结束统一处理；**README 等文档同步攒到最后**（两处过期点已记录：功能表描述、API 表缺任务接口）。三期（agent-as-tool 子智能体）待排期，整体见 `docs/plans/react-superagent.md`。
 2. **`master` / `test` 协作约定（2026/9/20 已定，长期有效）**：① 不 merge，只把 `test` 的功能提交 cherry-pick 到 `master`；② 对比两分支时排除 `master` 本就不放的文件（`.agents/`、`notes/`、`src/main/resources/document/`、`PROGRESS.md`），实践命令见「风险 / 遗留问题」；③ `PROGRESS.md` 只在 `test` 维护；④ `master` 上两条提交信息与内容不符（`e9a038e` / `95c798a`）按用户指示不处理（改写需 force-push）；⑤ 临时分支 `knowledge-user-manage`（本地与远端）待删除。
 3. **入库忽略约定（已核实）**：`src/main/resources/application.yml`（含密钥）与 `src/main/resources/document/`（运行时上传的文档）均被 `.gitignore` 忽略；`docs/plans/` 同样不入库（2026/9/21 用户决定）——只在用户**明确要求**时才把计划写入该目录。
 4. **后续需求与长期事项**：见「后续优化（待办）」——遗留 ① 应用外壳矮视口不滚动、全站触控目标补齐、个人信息入口重构、用户管理批量机制描述符化与「批量改用户名」前置条件。

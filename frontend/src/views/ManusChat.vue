@@ -1,52 +1,67 @@
 <template>
   <div class="task-page">
-    <header class="task-header">
-      <router-link to="/" class="back" aria-label="返回首页">
-        <ArrowLeft class="icon" size="16" />
-        返回
-      </router-link>
-      <h1>AI 超级智能体</h1>
-      <button
-        class="history-toggle"
-        :class="{ active: sidebarOpen }"
-        @click="sidebarOpen = !sidebarOpen"
-        aria-label="任务记录"
-      >
-        <ListTodo class="icon" size="18" />
-      </button>
-    </header>
+    <!-- 任务记录侧栏（全高，与知识问答页布局一致） -->
+    <div v-if="sidebarOpen" class="sidebar-backdrop" @click="sidebarOpen = false"></div>
+    <aside class="task-sidebar" :class="{ open: sidebarOpen }">
+      <div class="sidebar-head">
+        <span class="sidebar-title">任务记录</span>
+        <button class="new-task-btn" @click="startNewTask" aria-label="新建任务">
+          <Plus class="icon" size="16" />
+          新任务
+        </button>
+      </div>
+      <div class="task-list">
+        <div v-if="!history.length && !historyLoading" class="task-list-empty">暂无任务记录</div>
+        <div v-if="historyLoading" class="task-list-empty">加载中…</div>
+        <button
+          v-for="item in history"
+          :key="item.id"
+          class="history-item"
+          :class="{ current: active && active.id === item.id }"
+          @click="openDetail(item.id)"
+        >
+          <span class="history-item-title">{{ item.title || '未命名任务' }}</span>
+          <span class="history-item-meta">
+            <span class="status-dot" :class="statusKey(item.status)"></span>
+            <span class="status-text">{{ statusLabel(item.status) }}</span>
+            <span v-if="item.totalSteps" class="history-progress">{{ item.doneSteps }}/{{ item.totalSteps }} 步</span>
+            <span class="history-time">{{ formatTime(item.updatedAt || item.createdAt) }}</span>
+          </span>
+        </button>
+      </div>
+    </aside>
 
-    <div class="task-body">
-      <!-- 任务记录侧栏 -->
-      <div v-if="sidebarOpen" class="sidebar-backdrop" @click="sidebarOpen = false"></div>
-      <aside class="task-sidebar" :class="{ open: sidebarOpen }">
-        <div class="sidebar-head">
-          <span class="sidebar-title">任务记录</span>
-          <button class="new-task-btn" @click="startNewTask" aria-label="新建任务">
-            <Plus class="icon" size="16" />
-            新任务
-          </button>
-        </div>
-        <div class="task-list">
-          <div v-if="!history.length && !historyLoading" class="task-list-empty">暂无任务记录</div>
-          <div v-if="historyLoading" class="task-list-empty">加载中…</div>
-          <button
-            v-for="item in history"
-            :key="item.id"
-            class="history-item"
-            :class="{ current: active && active.id === item.id }"
-            @click="openDetail(item.id)"
-          >
-            <span class="history-item-title">{{ item.title || '未命名任务' }}</span>
-            <span class="history-item-meta">
-              <span class="status-dot" :class="statusKey(item.status)"></span>
-              <span class="status-text">{{ statusLabel(item.status) }}</span>
-              <span v-if="item.totalSteps" class="history-progress">{{ item.doneSteps }}/{{ item.totalSteps }} 步</span>
-              <span class="history-time">{{ formatTime(item.updatedAt || item.createdAt) }}</span>
-            </span>
-          </button>
-        </div>
-      </aside>
+    <!-- 右列：头部 + 消息区 + 输入区（输入区不占侧栏） -->
+    <div class="right-col">
+      <header class="task-header">
+        <router-link to="/" class="back" aria-label="返回首页">
+          <ArrowLeft class="icon" size="16" />
+          返回
+        </router-link>
+        <h1>AI 超级智能体</h1>
+        <span v-if="active" class="status-chip" :class="statusKey(active.status)">
+          <span v-if="active.status === 'RUNNING'" class="pulse-dot"></span>
+          {{ statusLabel(active.status) }}
+        </span>
+        <button
+          v-if="running && !stopping"
+          class="stop-btn"
+          @click="stopTask"
+          aria-label="停止任务"
+        >
+          <Square class="icon" size="14" />
+          停止
+        </button>
+        <span v-if="stopping" class="stopping-hint">停止中…</span>
+        <button
+          class="history-toggle"
+          :class="{ active: sidebarOpen }"
+          @click="sidebarOpen = !sidebarOpen"
+          aria-label="任务记录"
+        >
+          <ListTodo class="icon" size="18" />
+        </button>
+      </header>
 
       <!-- 任务主区 -->
       <main class="task-main" ref="mainRef">
@@ -82,104 +97,126 @@
           </div>
         </div>
 
-        <!-- 任务视图 -->
+        <!-- 任务视图（轮次对话流：用户问题 → 执行过程 → 任务报告，追问追加新一轮） -->
         <div v-else class="task-view">
-          <div class="task-card">
-            <div class="task-card-head">
-              <span class="status-chip" :class="statusKey(active.status)">
-                <span v-if="active.status === 'RUNNING'" class="pulse-dot"></span>
-                {{ statusLabel(active.status) }}
-              </span>
+          <template v-for="(round, ri) in rounds" :key="ri">
+            <!-- 用户问题（灰底气泡，与 AI 报告区分） -->
+            <div class="user-question">
+              <div class="uq-bubble">{{ round.question }}</div>
+            </div>
+
+            <!-- 执行过程（透明折叠行；执行中常驻：无事件时显示"正在思考"等待动画） -->
+            <div v-if="round.processEvents.length || (round.plan && round.plan.length) || isRoundRunning(ri)" class="process-line">
               <button
-                v-if="running && !stopping"
-                class="stop-btn"
-                @click="stopTask"
-                aria-label="停止任务"
+                class="process-toggle"
+                @click="toggleRound(ri)"
+                :aria-expanded="!isRoundCollapsed(ri)"
               >
-                <Square class="icon" size="14" />
-                停止
+                <Brain class="icon" size="14" :class="{ 'icon-pulse': isRoundRunning(ri) }" />
+                <span class="process-title">{{ roundTitle(ri) }}</span>
+                <span v-if="roundThinking(ri)" class="thinking-dots" aria-label="思考中"><i></i><i></i><i></i></span>
+                <ChevronDown class="chev" :class="{ expanded: !isRoundCollapsed(ri) }" size="14" />
               </button>
-              <span v-if="stopping" class="stopping-hint">停止中，等待当前步骤完成…</span>
-            </div>
-            <p class="task-text">{{ active.task }}</p>
-          </div>
+              <div v-if="!isRoundCollapsed(ri)" class="process-detail">
+                <div v-if="!round.processEvents.length && !(round.plan && round.plan.length)" class="process-loading">正在思考中，请稍候…</div>
+                <!-- 计划进度面板 -->
+                <section v-if="round.plan && round.plan.length" class="plan-panel" aria-label="任务计划">
+                  <div class="section-head">
+                    <ListChecks class="icon" size="16" />
+                    <span>执行计划</span>
+                  </div>
+                  <div
+                    v-for="step in round.plan"
+                    :key="step.index"
+                    class="plan-step"
+                    :class="step.status"
+                  >
+                    <span class="step-icon">
+                      <CircleCheck v-if="step.status === 'done'" size="16" />
+                      <Loader v-else-if="step.status === 'in_progress'" size="16" class="spin" />
+                      <Ban v-else-if="step.status === 'skipped'" size="16" />
+                      <CircleDashed v-else size="16" />
+                    </span>
+                    <span class="step-index">{{ step.index }}</span>
+                    <span class="step-content">
+                      {{ step.content }}
+                      <em v-if="step.note" class="step-note">{{ step.note }}</em>
+                    </span>
+                  </div>
+                </section>
 
-          <!-- 计划进度面板 -->
-          <section v-if="active.plan && active.plan.length" class="plan-panel" aria-label="任务计划">
-            <div class="section-head">
-              <ListChecks class="icon" size="16" />
-              <span>执行计划</span>
+                <!-- 该轮事件 -->
+                <div
+                  v-for="(ev, i) in round.processEvents"
+                  :key="i"
+                  class="event-card"
+                  :class="ev.type"
+                >
+                  <div class="event-head" @click="ev.type === 'tool_result' ? toggleExpand(ri, i) : null">
+                    <span class="event-icon">
+                      <Brain v-if="ev.type === 'think'" size="14" />
+                      <Wrench v-else-if="ev.type === 'tool_call'" size="14" />
+                      <ChevronRight v-else-if="ev.type === 'tool_result'" size="14" :class="{ expanded: expandedSet.has(ri + '-' + i) }" />
+                      <ListChecks v-else-if="ev.type === 'plan_updated'" size="14" />
+                      <CircleAlert v-else-if="ev.type === 'error'" size="14" />
+                      <FileText v-else size="14" />
+                    </span>
+                    <span class="event-title">{{ eventTitle(ev) }}</span>
+                    <span class="event-time">{{ formatClock(ev.timestamp) }}</span>
+                  </div>
+                  <div
+                    v-if="ev.type === 'think' && ev.content"
+                    class="event-body markdown-body"
+                    v-html="renderMarkdown(ev.content)"
+                  ></div>
+                  <div v-if="ev.type === 'tool_call' && ev.toolArgs" class="event-body">
+                    <code class="tool-args">{{ formatArgs(ev.toolArgs) }}</code>
+                  </div>
+                  <div v-if="ev.type === 'tool_result' && expandedSet.has(ri + '-' + i) && ev.toolResult" class="event-body">
+                    <pre class="tool-result">{{ ev.toolResult }}</pre>
+                  </div>
+                  <div v-if="ev.type === 'plan_updated'" class="event-body compact">
+                    {{ planSummary(ev.steps) }}
+                  </div>
+                  <div v-if="ev.type === 'deliverable' && ev.deliverable" class="event-body">
+                    <div class="deliverable-chip">
+                      <FileText class="icon" size="14" />
+                      <span class="deliverable-name">{{ ev.deliverable.name }}</span>
+                      <span class="deliverable-type">{{ deliverableTypeLabel(ev.deliverable.type) }}</span>
+                      <button class="deliverable-btn" @click.stop="previewDeliverable(ev.deliverable)" aria-label="预览">预览</button>
+                      <button class="deliverable-btn" @click.stop="downloadDeliverable(ev.deliverable)" aria-label="下载">下载</button>
+                    </div>
+                    <p v-if="ev.deliverable.note" class="deliverable-note">{{ ev.deliverable.note }}</p>
+                  </div>
+                </div>
+              </div>
             </div>
-            <div
-              v-for="step in active.plan"
-              :key="step.index"
-              class="plan-step"
-              :class="step.status"
-            >
-              <span class="step-icon">
-                <CircleCheck v-if="step.status === 'done'" size="16" />
-                <Loader v-else-if="step.status === 'in_progress'" size="16" class="spin" />
-                <Ban v-else-if="step.status === 'skipped'" size="16" />
-                <CircleDashed v-else size="16" />
-              </span>
-              <span class="step-index">{{ step.index }}</span>
-              <span class="step-content">
-                {{ step.content }}
-                <em v-if="step.note" class="step-note">{{ step.note }}</em>
-              </span>
-            </div>
-          </section>
 
-          <!-- 执行时间线 -->
-          <section v-if="active.events.length" class="timeline" aria-label="执行过程">
-            <div class="section-head">
-              <Brain class="icon" size="16" />
-              <span>执行过程</span>
-            </div>
-            <div
-              v-for="(ev, i) in active.events"
-              :key="i"
-              class="event-card"
-              :class="ev.type"
-            >
-              <div class="event-head" @click="ev.type === 'tool_result' ? toggleExpand(i) : null">
-                <span class="event-icon">
-                  <Brain v-if="ev.type === 'think'" size="14" />
-                  <Wrench v-else-if="ev.type === 'tool_call'" size="14" />
-                  <ChevronRight v-else-if="ev.type === 'tool_result'" size="14" :class="{ expanded: expandedSet.has(i) }" />
-                  <ListChecks v-else-if="ev.type === 'plan_updated'" size="14" />
-                  <CircleAlert v-else-if="ev.type === 'error'" size="14" />
-                  <FileText v-else size="14" />
-                </span>
-                <span class="event-title">{{ eventTitle(ev) }}</span>
-                <span class="event-time">{{ formatClock(ev.timestamp) }}</span>
+            <!-- 该轮任务报告 -->
+            <section v-if="round.report" class="report-panel" aria-label="任务报告">
+              <div class="section-head">
+                <FileText class="icon" size="16" />
+                <span>任务报告</span>
               </div>
-              <div
-                v-if="ev.type === 'think' && ev.content"
-                class="event-body markdown-body"
-                v-html="renderMarkdown(ev.content)"
-              ></div>
-              <div v-if="ev.type === 'tool_call' && ev.toolArgs" class="event-body">
-                <code class="tool-args">{{ formatArgs(ev.toolArgs) }}</code>
-              </div>
-              <div v-if="ev.type === 'tool_result' && expandedSet.has(i) && ev.toolResult" class="event-body">
-                <pre class="tool-result">{{ ev.toolResult }}</pre>
-              </div>
-              <div v-if="ev.type === 'plan_updated'" class="event-body compact">
-                {{ planSummary(ev.steps) }}
-              </div>
-            </div>
-          </section>
+              <div class="report-body markdown-body" v-html="renderMarkdown(round.report)"></div>
+            </section>
+          </template>
 
-          <!-- 最终报告 -->
-          <section v-if="active.finalReport" class="report-panel" aria-label="任务报告">
+          <!-- 交付物清单（任务级汇总） -->
+          <section v-if="active.deliverables && active.deliverables.length" class="report-panel deliverables-panel" aria-label="交付物">
             <div class="section-head">
               <FileText class="icon" size="16" />
-              <span>任务报告</span>
+              <span>交付物（{{ active.deliverables.length }}）</span>
             </div>
-            <div class="report-body markdown-body" v-html="renderMarkdown(active.finalReport)"></div>
+            <div v-for="d in active.deliverables" :key="d.index" class="deliverable-row">
+              <FileText class="icon" size="14" />
+              <span class="deliverable-name">{{ d.name }}</span>
+              <span class="deliverable-size">{{ formatSize(d.size) }}</span>
+              <span class="deliverable-type">{{ deliverableTypeLabel(d.type) }}</span>
+              <button class="deliverable-btn" @click="previewDeliverable(d)" aria-label="预览">预览</button>
+              <button class="deliverable-btn" @click="downloadDeliverable(d)" aria-label="下载">下载</button>
+            </div>
           </section>
-
         </div>
       </main>
 
@@ -191,32 +228,32 @@
           <X size="14" />
         </button>
       </div>
-    </div>
 
-    <!-- 输入区 -->
-    <div class="input-area">
-      <textarea
-        v-model="inputText"
-        placeholder="描述你的任务，例如：搜索最新的大模型资讯，整理成一份摘要…"
-        rows="2"
-        :disabled="creating"
-        @keydown.enter.exact.prevent="send"
-      ></textarea>
-      <button
-        class="send-btn"
-        :disabled="creating || !inputText.trim()"
-        @click="send"
-        aria-label="开始执行任务"
-      >
-        <span v-if="!creating" class="btn-inner">
-          <ArrowRight class="icon" size="18" />
-          <span class="btn-text">开始任务</span>
-        </span>
-        <span v-else class="btn-inner">
-          <Loader class="icon spin" size="18" />
-          <span class="btn-text">创建中</span>
-        </span>
-      </button>
+      <!-- 输入区 -->
+      <div class="input-area">
+        <textarea
+          v-model="inputText"
+          :placeholder="followUpMode ? '继续追问或下达新指令…' : '描述你的任务，例如：搜索最新的大模型资讯，整理成一份摘要…'"
+          rows="2"
+          :disabled="creating"
+          @keydown.enter.exact.prevent="send"
+        ></textarea>
+        <button
+          class="send-btn"
+          :disabled="creating || !inputText.trim()"
+          @click="send"
+          :aria-label="followUpMode ? '发送追问' : '开始执行任务'"
+        >
+          <span v-if="!creating" class="btn-inner">
+            <ArrowRight class="icon" size="18" />
+            <span class="btn-text">{{ followUpMode ? '发送' : '开始任务' }}</span>
+          </span>
+          <span v-else class="btn-inner">
+            <Loader class="icon spin" size="18" />
+            <span class="btn-text">创建中</span>
+          </span>
+        </button>
+      </div>
     </div>
 
     <!-- 图片预览弹窗 -->
@@ -232,13 +269,16 @@
 </template>
 
 <script setup>
-import { ref, reactive, nextTick, onMounted, onUnmounted } from 'vue'
+import { ref, reactive, computed, nextTick, onMounted, onUnmounted } from 'vue'
 import {
   createManusTask,
   stopManusTask,
   fetchManusTaskList,
   fetchManusTask,
   streamManusTaskEvents,
+  sendManusFollowUp,
+  downloadManusDeliverable,
+  fetchManusDeliverablePreview,
 } from '../api/request'
 import { linkifyHtml } from '../utils/linkify'
 import { previewImage, openPreview, closePreview } from '../utils/previewImage'
@@ -247,7 +287,7 @@ import DOMPurify from 'dompurify'
 import {
   ArrowLeft, ArrowRight, Square, X,
   Brain, Wrench, ListChecks, ListTodo, Plus,
-  CircleCheck, CircleDashed, CircleAlert, ChevronRight,
+  CircleCheck, CircleDashed, CircleAlert, ChevronDown, ChevronRight,
   Loader, FileText, Ban,
 } from '@lucide/vue'
 
@@ -279,6 +319,62 @@ const abortController = ref(null)
 
 // 是否有任务在执行/排队（用于显示停止按钮与状态刷新）
 const running = ref(false)
+
+// 轮次对话流：按 user_message 事件把事件日志切分为多轮
+// 每轮 = 用户问题（原始任务或追问）+ 执行过程事件 + 该轮报告（轮内最后一个 final 事件）
+const rounds = computed(() => {
+  if (!active.value) return []
+  const list = []
+  let current = { question: active.value.task, processEvents: [], plan: null, report: null }
+  for (const ev of (active.value.events || [])) {
+    if (ev.type === 'user_message') {
+      list.push(current)
+      // 新一轮计划置空：仅展示该轮内 planCreate/planUpdate 产生的快照，避免误显示上一轮的旧计划
+      current = { question: ev.content || '', processEvents: [], plan: null, report: null }
+    } else if (ev.type === 'final') {
+      current.report = ev.content || current.report
+    } else {
+      if (ev.type === 'plan_updated' && ev.steps) current.plan = ev.steps
+      current.processEvents.push(ev)
+    }
+  }
+  list.push(current)
+  return list
+})
+
+// 每轮过程折叠状态：默认收起；最后一轮执行中自动展开；结束自动收起；可手动切换
+const roundCollapsed = reactive({})
+function isRoundRunning(ri) {
+  return running.value && ri === rounds.value.length - 1
+}
+function isRoundCollapsed(ri) {
+  if (roundCollapsed[ri] !== undefined) return roundCollapsed[ri]
+  return !isRoundRunning(ri)
+}
+// 轮次标题：执行中且尚无任何事件时为"正在思考"，有事件后为"正在执行"，结束为"执行过程"
+function roundThinking(ri) {
+  const round = rounds.value[ri]
+  return isRoundRunning(ri) && round && !round.processEvents.length
+}
+function roundTitle(ri) {
+  if (!isRoundRunning(ri)) return '执行过程'
+  return roundThinking(ri) ? '正在思考' : '正在执行'
+}
+function toggleRound(ri) {
+  roundCollapsed[ri] = !isRoundCollapsed(ri)
+}
+function resetRoundState() {
+  Object.keys(roundCollapsed).forEach((k) => delete roundCollapsed[k])
+  expandedSet.clear()
+}
+
+// 追问模式：当前任务已到终态，输入框变为追问输入
+const followUpMode = computed(() =>
+  active.value && ['COMPLETED', 'STOPPED', 'ERROR'].includes(active.value.status)
+)
+
+// 预览产生的 blob URL（卸载与超时后统一回收，陷阱 33）
+const previewBlobUrls = ref([])
 function statusLabel(status) {
   return STATUS_LABELS[status] || status || '未知'
 }
@@ -326,10 +422,23 @@ function eventTitle(ev) {
     case 'tool_call': return `调用工具 · ${ev.toolName || '未知'}`
     case 'tool_result': return `工具返回 · ${ev.toolName || '未知'}`
     case 'plan_updated': return '计划已更新'
+    case 'user_message': return '用户追问'
+    case 'deliverable': return `交付物产出 · ${ev.deliverable?.name || ''}`
     case 'error': return '执行异常'
     case 'final': return '任务结束'
     default: return ev.type
   }
+}
+
+function deliverableTypeLabel(type) {
+  return { pdf: 'PDF', image: '图片', text: '文本', binary: '文件' }[type] || type
+}
+
+function formatSize(bytes) {
+  if (bytes == null) return ''
+  if (bytes < 1024) return `${bytes} B`
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
+  return `${(bytes / 1024 / 1024).toFixed(1)} MB`
 }
 
 function planSummary(steps) {
@@ -349,11 +458,12 @@ function formatArgs(argsJson) {
   }
 }
 
-function toggleExpand(index) {
-  if (expandedSet.has(index)) {
-    expandedSet.delete(index)
+function toggleExpand(ri, i) {
+  const key = ri + '-' + i
+  if (expandedSet.has(key)) {
+    expandedSet.delete(key)
   } else {
-    expandedSet.add(index)
+    expandedSet.add(key)
   }
 }
 
@@ -385,16 +495,23 @@ function applyEvent(ev) {
     active.value.events.push(ev)
     running.value = false
     stopping.value = false
-    // final 事件不携带终态：拉取详情刷新真实状态与报告
+    // 结果就绪：折叠最后一轮的过程，报告呈现
+    roundCollapsed[rounds.value.length - 1] = true
+    // final 事件不携带终态：拉取详情刷新真实状态、报告与交付物
     fetchManusTask(active.value.id)
       .then((res) => {
         if (active.value && active.value.id === res.data.id) {
           active.value.status = res.data.status
           active.value.finalReport = res.data.finalReport || active.value.finalReport
+          active.value.deliverables = withIndex(res.data.deliverables)
         }
       })
       .catch(() => {})
     loadHistory()
+  } else if (ev.type === 'deliverable' && ev.deliverable) {
+    if (!active.value.deliverables) active.value.deliverables = []
+    active.value.deliverables.push({ ...ev.deliverable, index: active.value.deliverables.length + 1 })
+    active.value.events.push(ev)
   } else {
     active.value.events.push(ev)
   }
@@ -404,6 +521,11 @@ function applyEvent(ev) {
 function send() {
   const text = inputText.value.trim()
   if (!text || creating.value) return
+  // 追问模式：对已结束的当前任务追加消息，时间线续接
+  if (followUpMode.value) {
+    submitFollowUp(text)
+    return
+  }
   creating.value = true
   streamError.value = ''
   createManusTask(text)
@@ -417,10 +539,12 @@ function send() {
         plan: [],
         events: [],
         finalReport: '',
+        deliverables: [],
       }
       running.value = true
       stopping.value = false
       sidebarOpen.value = false
+      resetRoundState()
       loadHistory()
       subscribeEvents(res.data.id)
       scrollToBottom()
@@ -433,7 +557,33 @@ function send() {
     })
 }
 
-function subscribeEvents(taskId) {
+/** 提交追问：任务回到执行态，输入清空，续接事件流 */
+function submitFollowUp(text) {
+  creating.value = true
+  streamError.value = ''
+  expandedSet.clear()
+  sendManusFollowUp(active.value.id, text)
+    .then((res) => {
+      inputText.value = ''
+      active.value.status = res.data.status
+      running.value = true
+      stopping.value = false
+      // 展开即将到来的新一轮（下标=当前轮数；此刻追问事件尚未到达，不能按最后一轮取，否则会误展开上一轮）
+      roundCollapsed[rounds.value.length] = false
+      scrollToBottom()
+      // 从当前已展示的事件之后增量订阅，避免整段重复回放
+      subscribeEvents(active.value.id, active.value.events.length)
+      loadHistory()
+    })
+    .catch((e) => {
+      streamError.value = e?.response?.data?.message || '追问提交失败，请稍后重试'
+    })
+    .finally(() => {
+      creating.value = false
+    })
+}
+
+function subscribeEvents(taskId, after = 0) {
   abortController.value?.abort()
   const controller = new AbortController()
   abortController.value = controller
@@ -451,7 +601,7 @@ function subscribeEvents(taskId) {
       streamError.value = err?.message ? '事件流中断：' + err.message : '事件流中断，任务仍在后台执行，可稍后在任务记录中回放'
       loadHistory()
     },
-  }, controller.signal)
+  }, controller.signal, after)
 }
 
 async function stopTask() {
@@ -473,7 +623,7 @@ async function openDetail(taskId) {
   streamError.value = ''
   try {
     const res = await fetchManusTask(taskId)
-    expandedSet.clear()
+    resetRoundState()
     active.value = {
       id: res.data.id,
       task: res.data.task,
@@ -481,12 +631,14 @@ async function openDetail(taskId) {
       plan: res.data.plan || [],
       events: res.data.events || [],
       finalReport: res.data.finalReport || '',
+      deliverables: withIndex(res.data.deliverables),
     }
     sidebarOpen.value = false
-    // 未到终态的任务接续实时事件流，保持状态与时间线更新
+    // 未到终态的任务接续实时事件流（增量：从快照已有事件之后开始，避免重复）
     if (res.data.status === 'PENDING' || res.data.status === 'RUNNING') {
       running.value = true
-      subscribeEvents(taskId)
+      resetRoundState()
+      subscribeEvents(taskId, active.value.events.length)
     }
     scrollToBottom()
   } catch (e) {
@@ -502,7 +654,7 @@ function startNewTask() {
   streamError.value = ''
   active.value = null
   inputText.value = ''
-  expandedSet.clear()
+  resetRoundState()
   sidebarOpen.value = false
 }
 
@@ -512,6 +664,46 @@ function handleMainClick(e) {
   if (img) {
     openPreview(img.getAttribute('src') || '', img.getAttribute('alt') || '')
   }
+}
+
+/** 预览交付物：图片走预览浮层，PDF/文本新标签页打开 */
+async function previewDeliverable(deliverable) {
+  if (!active.value || stopping.value) return
+  try {
+    const { url } = await fetchManusDeliverablePreview(active.value.id, deliverable.index)
+    if (deliverable.type === 'image') {
+      openPreview(url, deliverable.name)
+    } else {
+      window.open(url, '_blank')
+    }
+    scheduleRevoke(url)
+  } catch (e) {
+    streamError.value = e?.response?.data?.message || '预览失败，请稍后重试'
+  }
+}
+
+/** 下载交付物 */
+async function downloadDeliverable(deliverable) {
+  if (!active.value) return
+  try {
+    await downloadManusDeliverable(active.value.id, deliverable.index, deliverable.name)
+  } catch (e) {
+    streamError.value = e?.response?.data?.message || '下载失败，请稍后重试'
+  }
+}
+
+/** 给交付物标注序号（1 开始，与登记顺序一致，供预览/下载接口使用） */
+function withIndex(deliverables) {
+  return (deliverables || []).map((d, i) => ({ ...d, index: i + 1 }))
+}
+
+/** 延迟回收预览 blob URL（给新标签页留出加载时间） */
+function scheduleRevoke(url) {
+  previewBlobUrls.value.push(url)
+  setTimeout(() => {
+    URL.revokeObjectURL(url)
+    previewBlobUrls.value = previewBlobUrls.value.filter((u) => u !== url)
+  }, 5 * 60 * 1000)
 }
 
 function handleKeydown(e) {
@@ -530,6 +722,9 @@ onUnmounted(() => {
   abortController.value?.abort()
   document.removeEventListener('keydown', handleKeydown)
   mainRef.value?.removeEventListener('click', handleMainClick)
+  // 回收预览 blob URL（陷阱 33）
+  previewBlobUrls.value.forEach((url) => URL.revokeObjectURL(url))
+  previewBlobUrls.value = []
 })
 </script>
 
@@ -537,10 +732,19 @@ onUnmounted(() => {
 .task-page {
   height: 100%;
   display: flex;
-  flex-direction: column;
+  flex-direction: row;
   background: var(--bg-primary, #f5f7fb);
   color: var(--text-primary, #1e293b);
   overflow: hidden;
+}
+
+/* ===== 右列（头部 + 消息区 + 输入区） ===== */
+.right-col {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  position: relative;
 }
 
 /* ===== 头部 ===== */
@@ -560,7 +764,6 @@ onUnmounted(() => {
     0 0 0 1px rgba(255, 255, 255, 0.4) inset;
 }
 .task-header h1 {
-  flex: 1;
   margin: 0;
   font-size: 1.05rem;
   font-weight: 700;
@@ -602,10 +805,12 @@ onUnmounted(() => {
 }
 
 /* ===== 主体布局 ===== */
-.task-body {
+.task-main {
   flex: 1;
   min-height: 0;
-  display: flex;
+  overflow-y: auto;
+  padding: 1.25rem 1.5rem 2rem;
+  scroll-behavior: smooth;
   position: relative;
 }
 
@@ -716,16 +921,7 @@ onUnmounted(() => {
   white-space: nowrap;
 }
 
-/* ===== 主区 ===== */
-.task-main {
-  flex: 1;
-  min-width: 0;
-  overflow-y: auto;
-  padding: 1.25rem 1.5rem 2rem;
-  scroll-behavior: smooth;
-}
-
-/* 空状态 */
+/* ===== 空状态 ===== */
 .empty-state {
   height: 100%;
   display: flex;
@@ -771,25 +967,108 @@ onUnmounted(() => {
   background: rgba(16, 185, 129, 0.06);
 }
 
-/* 任务卡 */
+/* 任务视图（轮次对话流） */
 .task-view {
   max-width: 860px;
   margin: 0 auto;
 }
-.task-card {
-  padding: 1rem 1.1rem;
-  border-radius: 16px;
-  background: rgba(255, 255, 255, 0.75);
-  backdrop-filter: blur(16px);
-  -webkit-backdrop-filter: blur(16px);
-  border: 1px solid rgba(255, 255, 255, 0.5);
-  box-shadow: var(--shadow-sm, 0 1px 3px rgba(15, 23, 42, 0.06));
+
+/* 用户问题（灰底气泡，与 AI 回复区分） */
+.user-question {
+  margin: 1.6rem 0 0.6rem;
+  display: flex;
+  justify-content: flex-end;
 }
-.task-card-head {
+.user-question:first-child {
+  margin-top: 0;
+}
+.uq-bubble {
+  max-width: 85%;
+  padding: 0.65rem 1rem;
+  border-radius: 14px 14px 4px 14px;
+  background: #eceff4;
+  color: var(--text-primary, #1e293b);
+  font-size: 0.92rem;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+/* 执行过程折叠行（透明、无轮廓、不占整行） */
+.process-line {
+  margin: 0.4rem 0;
+}
+.process-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  min-height: 32px;
+  padding: 0.15rem 0.5rem;
+  margin-left: -0.5rem;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  text-align: left;
+  border-radius: 10px;
+  transition: background 200ms ease;
+}
+.process-toggle:hover {
+  background: rgba(16, 185, 129, 0.07);
+}
+.process-toggle:focus-visible {
+  outline: 2px solid #10b981;
+  outline-offset: 2px;
+}
+.process-toggle .icon {
+  color: #10b981;
+}
+.process-toggle .icon-pulse {
+  animation: pulse 1.2s ease-in-out infinite;
+}
+.process-title {
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--text-secondary, #475569);
+}
+.process-toggle .chev {
+  color: var(--text-tertiary, #94a3b8);
+  transition: transform 200ms ease;
+}
+.process-toggle .chev.expanded {
+  transform: rotate(180deg);
+}
+.process-toggle .chev.expanded {
+  transform: rotate(180deg);
+}
+.process-detail {
+  padding: 0.3rem 0 0.4rem;
+}
+.process-loading {
   display: flex;
   align-items: center;
-  gap: 0.75rem;
-  margin-bottom: 0.5rem;
+  gap: 0.4rem;
+  padding: 0.4rem 0.6rem;
+  font-size: 0.8rem;
+  color: var(--text-tertiary, #94a3b8);
+}
+.thinking-dots {
+  display: inline-flex;
+  gap: 3px;
+  align-items: center;
+  margin-left: 0.1rem;
+}
+.thinking-dots i {
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: #10b981;
+  animation: dotBounce 1.2s ease-in-out infinite;
+}
+.thinking-dots i:nth-child(2) { animation-delay: 0.2s; }
+.thinking-dots i:nth-child(3) { animation-delay: 0.4s; }
+@keyframes dotBounce {
+  0%, 60%, 100% { opacity: 0.3; transform: translateY(0); }
+  30% { opacity: 1; transform: translateY(-3px); }
 }
 .status-chip {
   display: inline-flex;
@@ -1005,6 +1284,77 @@ onUnmounted(() => {
   transform: rotate(90deg);
 }
 
+/* 交付物 */
+.deliverable-chip {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  padding: 0.5rem 0.7rem;
+  border-radius: 10px;
+  background: rgba(16, 185, 129, 0.07);
+  border: 1px solid rgba(16, 185, 129, 0.25);
+}
+.deliverable-name {
+  font-weight: 700;
+  color: var(--text-primary, #1e293b);
+  word-break: break-all;
+}
+.deliverable-type {
+  font-size: 0.7rem;
+  padding: 0.1rem 0.5rem;
+  border-radius: 999px;
+  background: rgba(139, 92, 246, 0.12);
+  color: #7c3aed;
+  flex-shrink: 0;
+}
+.deliverable-size {
+  font-size: 0.72rem;
+  color: var(--text-tertiary, #94a3b8);
+  flex-shrink: 0;
+}
+.deliverable-btn {
+  min-height: 28px;
+  padding: 0 0.65rem;
+  border: 1px solid rgba(16, 185, 129, 0.4);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.8);
+  color: #059669;
+  font-size: 0.75rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 200ms ease;
+}
+.deliverable-btn:hover {
+  background: rgba(16, 185, 129, 0.15);
+}
+.deliverable-btn:focus-visible {
+  outline: 2px solid #10b981;
+  outline-offset: 2px;
+}
+.deliverable-note {
+  margin: 0.4rem 0 0;
+  font-size: 0.78rem;
+  color: var(--text-tertiary, #94a3b8);
+  word-break: break-word;
+}
+.deliverables-panel .deliverable-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  padding: 0.5rem 0;
+  border-bottom: 1px solid rgba(226, 232, 240, 0.6);
+  font-size: 0.85rem;
+}
+.deliverables-panel .deliverable-row:last-child {
+  border-bottom: none;
+}
+.deliverables-panel .icon {
+  color: #8b5cf6;
+  flex-shrink: 0;
+}
+
 /* 报告 */
 .report-panel {
   padding: 0.9rem 1rem;
@@ -1186,7 +1536,7 @@ onUnmounted(() => {
   }
   .task-sidebar {
     position: fixed;
-    top: 60px;
+    top: 0;
     bottom: 0;
     left: 0;
     z-index: 200;
@@ -1200,7 +1550,7 @@ onUnmounted(() => {
   }
   .sidebar-backdrop {
     position: fixed;
-    inset: 60px 0 0;
+    inset: 0;
     z-index: 150;
     background: rgba(15, 23, 42, 0.35);
   }

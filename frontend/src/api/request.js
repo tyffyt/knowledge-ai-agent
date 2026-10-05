@@ -208,13 +208,47 @@ export function fetchManusTask(taskId) {
 }
 
 /**
+ * 对已结束的任务追加用户追问，任务回到 RUNNING 并重新执行一轮
+ */
+export function sendManusFollowUp(taskId, message) {
+  return request.post(`/ai/manus/task/${taskId}/message`, { message })
+}
+
+/**
+ * 预览交付物：fetch 带 token 拉取 blob 并生成 objectURL
+ * 返回 { url, mimeType }；调用方负责在合适时机 URL.revokeObjectURL 回收（陷阱 33）
+ */
+export async function fetchManusDeliverablePreview(taskId, index) {
+  const res = await request.get(`/ai/manus/task/${taskId}/deliverable/${index}/preview`, { responseType: 'blob' })
+  return { url: URL.createObjectURL(res.data), mimeType: res.data.type || '' }
+}
+
+/**
+ * 下载交付物：fetch 带 token 拉取 blob 并触发浏览器保存
+ * 下载动作在内存中完成后立即回收 objectURL
+ */
+export async function downloadManusDeliverable(taskId, index, fileName) {
+  const res = await request.get(`/ai/manus/task/${taskId}/deliverable/${index}/download`, { responseType: 'blob' })
+  const url = URL.createObjectURL(res.data)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = fileName || 'download'
+  document.body.appendChild(a)
+  a.click()
+  a.remove()
+  URL.revokeObjectURL(url)
+}
+
+/**
  * 订阅 Manus 任务事件流（SSE，帧格式 data:JSON\n\n）
+ * after 为增量起点：只推送该序号之后的事件（配合追问/续接场景避免整段重复回放），0 表示从头回放
  * 每条事件：{ type, timestamp, content, toolName, toolArgs, toolResult, steps }
- * type: plan_updated / think / tool_call / tool_result / final / error
+ * type: plan_updated / think / tool_call / tool_result / deliverable / user_message / final / error
  * 支持 AbortController 取消
  */
-export function streamManusTaskEvents(taskId, { onEvent, onDone, onError }, signal) {
+export function streamManusTaskEvents(taskId, { onEvent, onDone, onError }, signal, after = 0) {
   const url = new URL(BASE_URL + '/api/ai/manus/task/' + encodeURIComponent(taskId) + '/stream', window.location.origin)
+  url.searchParams.set('after', String(after))
 
   const headers = {}
   const token = getToken()
@@ -222,7 +256,7 @@ export function streamManusTaskEvents(taskId, { onEvent, onDone, onError }, sign
 
   let buffer = ''
   function parseFrames(flush) {
-    // SSE 帧以空行分隔；flush 时解析剩余不完整帧（流结束时使用）
+    // SSE 帧以空行分隔；一个网络块可能同时到达多条帧，必须逐帧拆分（整段解析会在多帧同达时 JSON.parse 失败丢事件）
     let frames
     if (flush) {
       frames = buffer.split('\n\n')
@@ -230,8 +264,9 @@ export function streamManusTaskEvents(taskId, { onEvent, onDone, onError }, sign
     } else {
       const idx = buffer.lastIndexOf('\n\n')
       if (idx === -1) return
-      frames = [buffer.substring(0, idx)]
+      const complete = buffer.substring(0, idx)
       buffer = buffer.substring(idx + 2)
+      frames = complete.split('\n\n')
     }
     for (const frame of frames) {
       const dataLines = frame
@@ -243,7 +278,7 @@ export function streamManusTaskEvents(taskId, { onEvent, onDone, onError }, sign
         const event = JSON.parse(dataLines.join('\n'))
         onEvent?.(event)
       } catch (e) {
-        console.warn('解析任务事件失败:', e)
+        console.warn('解析任务事件失败:', e, frame)
       }
     }
   }

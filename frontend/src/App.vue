@@ -176,11 +176,11 @@ function updateIsMobile() {
   isMobile.value = window.innerWidth <= 768
 }
 
-// 是否显示 dock：移动端聊天页隐藏（避免遮挡底部输入区）；/knowledge 历史对话页、/knowledge-documents 知识库管理页与 /user-manage 用户管理页始终隐藏（避免与历史对话列表、批量操作条重叠）
+// 是否显示 dock：移动端聊天页隐藏（避免遮挡底部输入区）；/knowledge 历史对话页、/knowledge-documents 知识库管理页与 /user-manage 用户管理页始终隐藏（避免与历史对话列表、批量操作条重叠）；/manus 超级智能体页始终隐藏（用户反馈遮挡视野）
 const showDock = computed(() => {
   if (isMobile.value && (route.path === '/knowledge' || route.path === '/manus')) return false
-  // 历史对话页、知识库管理页与用户管理页隐藏个人信息组件，避免与列表/底部批量操作条重叠（入口可经页面返回键回到首页使用）
-  if (route.path === '/knowledge' || route.path === '/knowledge-documents' || route.path === '/user-manage') return false
+  // 历史对话页、知识库管理页、用户管理页与超级智能体页隐藏个人信息组件（入口可经页面返回键回到首页使用）
+  if (route.path === '/knowledge' || route.path === '/knowledge-documents' || route.path === '/user-manage' || route.path === '/manus') return false
   return true // 其他页面始终显示
 })
 

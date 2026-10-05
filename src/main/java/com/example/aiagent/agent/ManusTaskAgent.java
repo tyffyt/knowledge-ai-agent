@@ -81,7 +81,7 @@ public class ManusTaskAgent extends ToolCallAgent {
             String text = assistantMessage.getText();
             if (StrUtil.isNotBlank(text)) {
                 context.publish(new ManusTask.EventEntry("think", Instant.now().toString(),
-                        text, null, null, null, null));
+                        text, null, null, null, null, null));
                 // 记录最近一次有效思考文本作为最终报告候选（最终总结常与 doTerminate 在同一响应返回）
                 this.lastAssistantText = text;
             }
@@ -95,7 +95,7 @@ public class ManusTaskAgent extends ToolCallAgent {
             for (AssistantMessage.ToolCall toolCall : toolCallList) {
                 context.publish(new ManusTask.EventEntry("tool_call", Instant.now().toString(),
                         null, toolCall.name(), truncate(toolCall.arguments(), MAX_TOOL_ARGS_LENGTH),
-                        null, null));
+                        null, null, null));
             }
             consecutiveThinkFailures = 0;
             return true;
@@ -107,10 +107,10 @@ public class ManusTaskAgent extends ToolCallAgent {
                 setState(AgentState.ERROR);
                 context.publish(new ManusTask.EventEntry("error", Instant.now().toString(),
                         "思考连续失败 " + MAX_THINK_FAILURES + " 次，任务中止：" + e.getMessage(),
-                        null, null, null, null));
+                        null, null, null, null, null));
             } else {
                 context.publish(new ManusTask.EventEntry("error", Instant.now().toString(),
-                        "本次思考失败，将自动重试：" + e.getMessage(), null, null, null, null));
+                        "本次思考失败，将自动重试：" + e.getMessage(), null, null, null, null, null));
             }
             getMessageList().add(new AssistantMessage("处理时遇到了错误：" + e.getMessage()));
             return false;
@@ -134,14 +134,14 @@ public class ManusTaskAgent extends ToolCallAgent {
                 for (ToolResponseMessage.ToolResponse response : toolResponseMessage.getResponses()) {
                     context.publish(new ManusTask.EventEntry("tool_result", Instant.now().toString(),
                             null, response.name(), null,
-                            truncate(response.responseData(), MAX_TOOL_RESULT_LENGTH), null));
+                            truncate(response.responseData(), MAX_TOOL_RESULT_LENGTH), null, null));
                 }
             }
             return result;
         } catch (Exception e) {
             log.error("{} 工具执行出现异常", getName(), e);
             context.publish(new ManusTask.EventEntry("error", Instant.now().toString(),
-                    "工具执行失败：" + e.getMessage(), null, null, null, null));
+                    "工具执行失败：" + e.getMessage(), null, null, null, null, null));
             return "工具执行失败：" + e.getMessage();
         }
     }
