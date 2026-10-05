@@ -150,7 +150,7 @@
                   v-for="(ev, i) in round.processEvents"
                   :key="i"
                   class="event-card"
-                  :class="ev.type"
+                  :class="[ev.type, { 'sub-agent': ev.agent && ev.agent !== 'main' }]"
                 >
                   <div class="event-head" @click="ev.type === 'tool_result' ? toggleExpand(ri, i) : null">
                     <span class="event-icon">
@@ -175,21 +175,11 @@
                   <div v-if="ev.type === 'tool_result' && expandedSet.has(ri + '-' + i) && ev.toolResult" class="event-body">
                     <pre class="tool-result">{{ ev.toolResult }}</pre>
                   </div>
-                  <div v-if="ev.type === 'plan_updated'" class="event-body compact">
-                    {{ planSummary(ev.steps) }}
-                  </div>
-                  <div v-if="ev.type === 'deliverable' && ev.deliverable" class="event-body">
-                    <div class="deliverable-chip">
-                      <FileText class="icon" size="14" />
-                      <span class="deliverable-name">{{ ev.deliverable.name }}</span>
-                      <span class="deliverable-type">{{ deliverableTypeLabel(ev.deliverable.type) }}</span>
-                      <button class="deliverable-btn" @click.stop="previewDeliverable(ev.deliverable)" aria-label="预览">预览</button>
-                      <button class="deliverable-btn" @click.stop="downloadDeliverable(ev.deliverable)" aria-label="下载">下载</button>
-                    </div>
-                    <p v-if="ev.deliverable.note" class="deliverable-note">{{ ev.deliverable.note }}</p>
-                  </div>
-                </div>
+              <div v-if="ev.type === 'plan_updated'" class="event-body compact">
+                {{ planSummary(ev.steps) }}
               </div>
+            </div>
+          </div>
             </div>
 
             <!-- 该轮任务报告 -->
@@ -200,23 +190,16 @@
               </div>
               <div class="report-body markdown-body" v-html="renderMarkdown(round.report)"></div>
             </section>
-          </template>
 
-          <!-- 交付物清单（任务级汇总） -->
-          <section v-if="active.deliverables && active.deliverables.length" class="report-panel deliverables-panel" aria-label="交付物">
-            <div class="section-head">
-              <FileText class="icon" size="16" />
-              <span>交付物（{{ active.deliverables.length }}）</span>
-            </div>
-            <div v-for="d in active.deliverables" :key="d.index" class="deliverable-row">
+            <!-- 该轮交付物（紧跟报告，预览/下载即点即用） -->
+            <div v-for="d in round.deliverables" :key="d.index" class="deliverable-chip deliverable-inline">
               <FileText class="icon" size="14" />
               <span class="deliverable-name">{{ d.name }}</span>
-              <span class="deliverable-size">{{ formatSize(d.size) }}</span>
               <span class="deliverable-type">{{ deliverableTypeLabel(d.type) }}</span>
-              <button class="deliverable-btn" @click="previewDeliverable(d)" aria-label="预览">预览</button>
-              <button class="deliverable-btn" @click="downloadDeliverable(d)" aria-label="下载">下载</button>
+              <button class="deliverable-btn" @click.stop="previewDeliverable(d)" aria-label="预览">预览</button>
+              <button class="deliverable-btn" @click.stop="downloadDeliverable(d)" aria-label="下载">下载</button>
             </div>
-          </section>
+          </template>
         </div>
       </main>
 
@@ -321,18 +304,23 @@ const abortController = ref(null)
 const running = ref(false)
 
 // 轮次对话流：按 user_message 事件把事件日志切分为多轮
-// 每轮 = 用户问题（原始任务或追问）+ 执行过程事件 + 该轮报告（轮内最后一个 final 事件）
+// 每轮 = 用户问题（原始任务或追问）+ 执行过程事件 + 该轮报告（轮内最后一个 final 事件）+ 该轮交付物（渲染在报告下方）
 const rounds = computed(() => {
   if (!active.value) return []
   const list = []
-  let current = { question: active.value.task, processEvents: [], plan: null, report: null }
+  let current = { question: active.value.task, processEvents: [], plan: null, report: null, deliverables: [] }
+  let deliverableSeq = 0
   for (const ev of (active.value.events || [])) {
     if (ev.type === 'user_message') {
       list.push(current)
       // 新一轮计划置空：仅展示该轮内 planCreate/planUpdate 产生的快照，避免误显示上一轮的旧计划
-      current = { question: ev.content || '', processEvents: [], plan: null, report: null }
+      current = { question: ev.content || '', processEvents: [], plan: null, report: null, deliverables: [] }
     } else if (ev.type === 'final') {
       current.report = ev.content || current.report
+    } else if (ev.type === 'deliverable' && ev.deliverable) {
+      // 交付物独立收集，渲染在该轮报告下方（不进过程明细，避免折叠后看不到）
+      deliverableSeq += 1
+      current.deliverables.push({ ...ev.deliverable, index: deliverableSeq })
     } else {
       if (ev.type === 'plan_updated' && ev.steps) current.plan = ev.steps
       current.processEvents.push(ev)
@@ -416,18 +404,33 @@ function renderMarkdown(content) {
   return linkifyHtml(DOMPurify.sanitize(rawHtml))
 }
 
+const AGENT_LABELS = {
+  main: '主智能体',
+  researcher: '联网研究员',
+  knowledgeResearcher: '知识库研究员',
+  writer: '撰写员',
+}
+
+function agentLabel(key) {
+  return AGENT_LABELS[key] || key || ''
+}
+
 function eventTitle(ev) {
-  switch (ev.type) {
-    case 'think': return '思考'
-    case 'tool_call': return `调用工具 · ${ev.toolName || '未知'}`
-    case 'tool_result': return `工具返回 · ${ev.toolName || '未知'}`
-    case 'plan_updated': return '计划已更新'
-    case 'user_message': return '用户追问'
-    case 'deliverable': return `交付物产出 · ${ev.deliverable?.name || ''}`
-    case 'error': return '执行异常'
-    case 'final': return '任务结束'
-    default: return ev.type
-  }
+  const prefix = ev.agent && ev.agent !== 'main' ? `【${agentLabel(ev.agent)}】` : ''
+  const base = (() => {
+    switch (ev.type) {
+      case 'think': return '思考'
+      case 'tool_call': return `调用工具 · ${ev.toolName || '未知'}`
+      case 'tool_result': return `工具返回 · ${ev.toolName || '未知'}`
+      case 'plan_updated': return '计划已更新'
+      case 'user_message': return '用户追问'
+      case 'deliverable': return `交付物产出 · ${ev.deliverable?.name || ''}`
+      case 'error': return '执行异常'
+      case 'final': return '任务结束'
+      default: return ev.type
+    }
+  })()
+  return prefix + base
 }
 
 function deliverableTypeLabel(type) {
@@ -1213,6 +1216,11 @@ onUnmounted(() => {
   border-color: rgba(239, 68, 68, 0.35);
   background: rgba(239, 68, 68, 0.04);
 }
+/* 子智能体事件：紫色左边框区分来源 */
+.event-card.sub-agent {
+  border-left: 3px solid #8b5cf6;
+  background: rgba(139, 92, 246, 0.04);
+}
 .event-card.final {
   border-color: rgba(16, 185, 129, 0.35);
 }
@@ -1294,6 +1302,9 @@ onUnmounted(() => {
   border-radius: 10px;
   background: rgba(16, 185, 129, 0.07);
   border: 1px solid rgba(16, 185, 129, 0.25);
+}
+.deliverable-inline {
+  margin: 0.6rem 0;
 }
 .deliverable-name {
   font-weight: 700;

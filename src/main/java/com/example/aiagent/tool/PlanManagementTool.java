@@ -60,7 +60,7 @@ public class PlanManagementTool {
         }
         context.setPlan(plan);
         context.publish(new ManusTask.EventEntry("plan_updated", Instant.now().toString(),
-                null, null, null, null, new ArrayList<>(plan), null));
+                null, null, null, null, new ArrayList<>(plan), null, "main"));
         return "计划已创建，共 " + plan.size() + " 步，请按顺序执行并逐步更新状态";
     }
 
@@ -92,7 +92,7 @@ public class PlanManagementTool {
         step.setStatus(status);
         step.setNote(StrUtil.isBlank(note) ? step.getNote() : note.trim());
         context.publish(new ManusTask.EventEntry("plan_updated", Instant.now().toString(),
-                null, null, null, null, new ArrayList<>(plan), null));
+                null, null, null, null, new ArrayList<>(plan), null, "main"));
         return "步骤 " + stepIndex + " 状态已更新为 " + status;
     }
 }

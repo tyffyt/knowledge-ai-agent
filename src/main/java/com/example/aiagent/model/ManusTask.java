@@ -82,6 +82,7 @@ public class ManusTask {
     /**
      * 执行事件条目
      * type 取值：plan_updated / think / tool_call / tool_result / deliverable / user_message / final / error
+     * agent 取值：main（主智能体）/ researcher / knowledgeResearcher / writer（子智能体），无 null
      */
     @Data
     @NoArgsConstructor
@@ -111,6 +112,9 @@ public class ManusTask {
 
         // 交付物（deliverable）
         private Deliverable deliverable;
+
+        // 事件来源角色标识：main=主智能体，researcher/knowledgeResearcher/writer=子智能体（无 null）
+        private String agent;
     }
 
     /**

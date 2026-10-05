@@ -4,6 +4,7 @@ import cn.hutool.core.util.StrUtil;
 import cn.hutool.json.JSONUtil;
 import com.example.aiagent.agent.ManusTaskAgent;
 import com.example.aiagent.agent.ManusTaskContext;
+import com.example.aiagent.agent.SubAgentRunner;
 import com.example.aiagent.agent.model.AgentState;
 import com.example.aiagent.advisor.MyLoggerAdvisor;
 import com.example.aiagent.model.ManusTask;
@@ -12,6 +13,7 @@ import com.example.aiagent.model.ManusTaskStatus;
 import com.example.aiagent.tool.KnowledgeSearchTool;
 import com.example.aiagent.tool.PlanManagementTool;
 import com.example.aiagent.tool.RegisterDeliverableTool;
+import com.example.aiagent.tool.SubAgentTool;
 import jakarta.annotation.PostConstruct;
 import jakarta.annotation.PreDestroy;
 import lombok.extern.slf4j.Slf4j;
@@ -80,8 +82,9 @@ public class ManusTaskService {
                - 使用 Markdown 结构组织（结论先行、要点分条、信息完整），用户不需要查看执行过程就能直接使用报告；
             5. 调用 doTerminate 结束任务前，确保所有计划步骤都已标记为 done（未执行的标记 skipped）；
             6. 如实汇报工具的执行结果，禁止编造结果；
-            7. 凡是生成了文件（PDF、下载的资源、写出的文档），必须立即用 register 工具登记为交付物，并给出简短的内容说明；
-            8. 涉及用户本地笔记与知识库的问题优先用 knowledgeSearch 检索，实时信息（新闻、行情等）用网络搜索。
+            7. 凡是生成了文件（PDF、下载的资源、写出的文档），必须立即用 register 工具登记为交付物，并给出简短的内容说明；报告与回复中不要写"如何获取文件"的操作指引（例如"请通过文档管理功能下载"），登记后的交付物会自动以预览/下载卡片展示在报告下方，你只需说明产出了什么文件；
+            8. 涉及用户本地笔记与知识库的问题优先用 knowledgeSearch 检索，实时信息（新闻、行情等）用网络搜索；
+            9. 派发纪律：需要多步深度调研、多角度检索或成文档撰写的独立子任务，可用 delegate 派发给对应角色的子智能体执行，你负责拆解任务、传递自包含的子任务描述并汇总结果；简单步骤自己直接做，不要滥用派发，同一子任务不要重复派发。
             """;
 
     private static final String NEXT_STEP_PROMPT = """
@@ -104,9 +107,16 @@ public class ManusTaskService {
     // 知识库检索工具（无状态，全任务共享一个实例）
     private final KnowledgeSearchTool knowledgeSearchTool;
 
+    // 子智能体对话模型（DeepSeek，与主智能体的千问分工）
+    private final ChatModel deepseekChatModel;
+
     // 步骤上限，可通过 manus.agent.max-steps 配置
     @Value("${manus.agent.max-steps:20}")
     private int maxSteps;
+
+    // 子智能体步骤上限，可通过 manus.agent.sub-max-steps 配置（默认 10）
+    @Value("${manus.agent.sub-max-steps:10}")
+    private int subMaxSteps;
 
     // 任务执行线程池大小，可通过 manus.agent.pool-size 配置（默认 4）
     @Value("${manus.agent.pool-size:4}")
@@ -114,6 +124,9 @@ public class ManusTaskService {
 
     // 任务执行线程池（@PostConstruct 按配置创建）
     private ExecutorService executor;
+
+    // 子智能体执行器（@PostConstruct 创建，依赖配置的步骤上限）
+    private SubAgentRunner subAgentRunner;
 
     // 线程序号（线程命名用）
     private final AtomicInteger threadSeq = new AtomicInteger();
@@ -128,20 +141,34 @@ public class ManusTaskService {
     private final Map<String, ManusTaskContext> runningContexts = new ConcurrentHashMap<>();
 
     public ManusTaskService(MongoTemplate mongoTemplate, ToolCallback[] allTools, ChatModel dashscopeChatModel,
-                            @Qualifier("knowledgeVectorStore") VectorStore knowledgeVectorStore) {
+                            @Qualifier("knowledgeVectorStore") VectorStore knowledgeVectorStore,
+                            @Qualifier("openAiChatModel") ChatModel deepseekChatModel) {
         this.mongoTemplate = mongoTemplate;
         this.allTools = allTools;
         this.dashscopeChatModel = dashscopeChatModel;
         this.knowledgeVectorStore = knowledgeVectorStore;
         this.knowledgeSearchTool = new KnowledgeSearchTool(knowledgeVectorStore);
+        this.deepseekChatModel = deepseekChatModel;
     }
 
     /**
-     * 按配置初始化任务执行线程池
+     * 按配置初始化任务执行线程池与子智能体执行器
      */
     @PostConstruct
     public void initExecutor() {
         executor = Executors.newFixedThreadPool(Math.max(1, poolSize), this::newTaskThread);
+        subAgentRunner = new SubAgentRunner(allTools, buildSubChatClient(), subMaxSteps);
+    }
+
+    /**
+     * 构建子智能体使用的 ChatClient（DeepSeek 模型 + 日志 Advisor，Agent 自行管理消息）
+     *
+     * @return ChatClient
+     */
+    private ChatClient buildSubChatClient() {
+        return ChatClient.builder(deepseekChatModel)
+                .defaultAdvisors(new MyLoggerAdvisor())
+                .build();
     }
 
     /**
@@ -303,7 +330,7 @@ public class ManusTaskService {
                 taskDoc.setEvents(new ArrayList<>());
             }
             taskDoc.getEvents().add(new ManusTask.EventEntry("user_message", Instant.now().toString(),
-                    message.trim(), null, null, null, null, null));
+                    message.trim(), null, null, null, null, null, "main"));
             taskDoc.setStatus(ManusTaskStatus.RUNNING);
             taskDoc.setUpdatedAt(Instant.now());
             mongoTemplate.save(taskDoc);
@@ -562,14 +589,16 @@ public class ManusTaskService {
     }
 
     /**
-     * 合成任务的工具集合：规划工具与交付物登记工具（每任务一份实例）+ 知识库检索工具 + 共享基础工具
+     * 合成任务的工具集合：规划工具、交付物登记工具（每任务一份实例）+ 知识库检索工具
+     * + 子任务派发工具（仅主智能体持有，子智能体白名单不含它以保证层级=1）+ 共享基础工具
      *
      * @param context 任务上下文
      * @return 工具回调数组
      */
     private ToolCallback[] mergeTools(ManusTaskContext context) {
         ToolCallback[] taskTools = ToolCallbacks.from(
-                new PlanManagementTool(context), new RegisterDeliverableTool(context), knowledgeSearchTool);
+                new PlanManagementTool(context), new RegisterDeliverableTool(context),
+                knowledgeSearchTool, new SubAgentTool(context, subAgentRunner));
         ToolCallback[] merged = new ToolCallback[taskTools.length + allTools.length];
         System.arraycopy(taskTools, 0, merged, 0, taskTools.length);
         System.arraycopy(allTools, 0, merged, taskTools.length, allTools.length);
@@ -585,7 +614,7 @@ public class ManusTaskService {
     private void registerDeliverable(String taskId, ManusTask.Deliverable deliverable) {
         Object lock = taskLocks.computeIfAbsent(taskId, k -> new Object());
         ManusTask.EventEntry event = new ManusTask.EventEntry("deliverable", Instant.now().toString(),
-                deliverable.getNote(), null, null, null, null, deliverable);
+                deliverable.getNote(), null, null, null, null, deliverable, "main");
         synchronized (lock) {
             ManusTask taskDoc = mongoTemplate.findById(taskId, ManusTask.class);
             if (taskDoc == null) {
@@ -705,6 +734,7 @@ public class ManusTaskService {
         sb.append("要求：\n");
         sb.append("- 第一句直接给出答案或结论；\n");
         sb.append("- 报告只包含给用户看的内容（答案、结论、建议、数据），禁止出现\"根据执行记录\"\"智能体\"\"工具\"\"步骤\"等描述执行过程的语句；\n");
+        sb.append("- 若执行中产出并登记了文件，报告说明产出了什么文件即可；禁止写\"如何获取/下载文件\"的操作指引（交付物卡片会自动展示在报告下方），也不要出现服务器本地路径；\n");
         sb.append("- 使用 Markdown 结构组织（结论先行、要点分条、信息完整）；\n");
         sb.append("- 若执行记录不足以完整回答问题，如实给出已获得的部分信息并说明未尽事项。\n\n");
         sb.append("【用户问题】\n").append(question).append("\n\n【执行记录】\n");

@@ -5,7 +5,7 @@
 ## 项目状态
 
 - 当前分支：`test`（工作分支，`PROGRESS.md` 只在此分支维护）· `master`（稳定主干，不放文档类文件）。版本 `0.2.0`（`pom.xml` 与 `CHANGELOG.md` 一致）。两分支关系是**分叉**：不直接 merge（会把 `master` 已删除的语料与 skills 复活），只把 `test` 的功能提交 **cherry-pick** 过去——约定与实践命令见「下一步」与「风险 / 遗留问题」。两分支均已推送、本地与远端同步；临时分支 `knowledge-user-manage` 待删除（远端同理）。
-- 一句话现状：规则体系、子智能体、进度/版本管理均已落地；Web 端「知识库文档管理」（`0.1.0`）与「用户管理」（`0.2.0`）完成开发 + 自测 + 独立审查并经用户验收，已合入 `test` 并 cherry-pick 到 `master`。**当前需求「大模型切换 + 大模型展示页」三端已验收，版本升至 `0.3.0`，功能与文档已分两条提交（`2efb7ed` / `f016636`，均未推送）**（分支 `knowledge-switch-model`，基于 `test`）：Web 端 4 个模型可切（deepseek-flash / deepseek-v4-pro / qwen3.7-plus / qwen3.8-flash）+ `/models` 展示页；安卓为 WebView 壳（部署新 H5 即生效、免重打包）；小程序同步实现模型切换。期间顺带修掉 `qwen3.8-flash` 带工具时的流式工具调用报错（Spring AI M6 缺陷，见陷阱 62）。仍待推进的事项见「后续优化（待办）」与「下一步」。
+- 一句话现状：规则体系、子智能体、进度/版本管理均已落地；Web 端「知识库文档管理」（`0.1.0`）与「用户管理」（`0.2.0`）完成开发 + 自测 + 独立审查并经用户验收，已合入 `test` 并 cherry-pick 到 `master`。**当前需求「大模型切换 + 大模型展示页」三端已验收，版本升至 `0.3.0`，功能与文档已分两条提交（`2efb7ed` / `f016636`，均未推送）**（分支 `knowledge-switch-model`，基于 `test`）：Web 端 4 个模型可切（deepseek-flash / deepseek-v4-pro / qwen3.7-plus / qwen3.8-flash）+ `/models` 展示页；安卓为 WebView 壳（部署新 H5 即生效、免重打包）；小程序同步实现模型切换。期间顺带修掉 `qwen3.8-flash` 带工具时的流式工具调用报错（Spring AI M6 缺陷，见陷阱 62）。仍待推进的事项见「后续优化（待办）」与「下一步」。 **当前需求「ReAct 超级智能体三期（子智能体协作）」已完成开发+自测+用户验收，待提交**：主智能体可 delegate 派发三个角色子智能体（researcher 联网研究 / knowledgeResearcher 知识库研究 / writer 文档撰写，DeepSeek 驱动），事件流带角色标识，一二期功能全部回归正常。
 
 ## 需求 / 任务清单
 
@@ -133,6 +133,9 @@
 - **存量空白 / 行尾统一（已同意，用户 2026/9/20 决定暂缓）**：清掉 `.editorconfig` 落地前的历史差异——制表符缩进 `App.vue`(148 处) / `Login.vue`(120) / `KnowledgeChat.vue`(379) / `ManusChat.vue`(185) / `ChangePassword.vue`(115)，LF 行尾 `frontend/src/main.js` / `frontend/vite.config.js` / `AiAgentApplication.java`，以及 `DocumentPreprocessor` 的行尾空格。用户暂时不想改动现有格式，需要时再作为独立提交处理（执行时须 build + 抽查 Vue 渲染，`application.yml` 被 `.gitignore` 忽略、不入库）
 
 
+| 2026/10/5 | **ReAct 超级智能体三期（子智能体协作）落地**：主智能体新增 delegate 派发工具（agent-as-tool），三个角色子智能体（researcher 联网研究 / knowledgeResearcher 知识库研究 / writer 文档撰写）以独立 ReAct 循环执行子任务，层级=1 防递归、共享停止标志、独立步骤上限（sub-max-steps=10）；子智能体模型用 DeepSeek（openAiChatModel），主智能体仍为千问；事件流加 agent 角色标识（无 null，主智能体恒为 main），前端时间线以紫色边框+【角色名】前缀区分来源；实测强制派发任务：main 34 条 + researcher 35 条事件协作完成，报告汇总正常；观察项：自然任务中主模型可能不主动派发（提示词引导可继续调优） | 新增 `agent/SubAgentCatalog`（角色目录）、`agent/SubAgentRunner`（子循环执行器）、`tool/SubAgentTool`（delegate 薄工具）；改 `ManusTask`（EventEntry.agent 字段）、`ManusTaskAgent`（agentName）、`ManusTaskService`（deepseek 子模型/注册/派发纪律）、`ManusChat.vue`（事件来源渲染） | 是（编译+构建通过；强制派发任务实测通过；一二期链路回归正常） |
+| 2026/10/5 | **三期验收反馈（交付物卡片位置 + 报告指引）**：① 交付物卡片从页面底部汇总区/折叠过程里提出来——**每轮报告下方直接渲染该轮产出的预览/下载卡片**（轮次切分时按 deliverable 事件收集，不再混入过程明细；顶部汇总区保留），实测含交付物任务卡片紧贴报告呈现；② 报告不再写"请通过文档管理功能下载"类获取指引（主提示词与收尾报告生成器各加约束：只说明产出了什么文件，交付物卡片自动展示，禁服务器本地路径），实测报告零指引残留；观察项：PDF 任务中模型可能跳过 generatePDF 并编造"生成失败"（未调工具却称失败），如实性纪律靠提示词持续约束 | 改 `ManusTaskService`（提示词×2）、`ManusChat.vue`（轮次交付物卡片） | 是（编译+构建通过；含交付物任务浏览器实测卡片渲染；PDF 任务实测零指引残留） |
+| 2026/10/5 | **三期验收反馈：交付物去重**——轮内报告下方的交付物卡片与底部「交付物(N)」汇总区重复展示，按用户决定移除底部汇总区，交付物只在对应轮次报告下方出现一次 | 改 `ManusChat.vue` | 是（构建通过） |
 ## 本次改动记录（最新在前）
 
 | 日期 | 改动 | 涉及文件/模块 | 是否已测/已审 |
