@@ -9,6 +9,7 @@
 
 全栈 AI Agent 平台：Spring Boot 3.5.10 + Java 17（必须 `--enable-preview`）+ Vue 3，Spring AI 1.0.0-M6。
 对话模型 **4 个可切**：deepseek-flash / deepseek-v4-pro / qwen3.7-plus / qwen3.8-flash（`MyChatClientConfig` 一模型一 ChatClient Bean，Bean 名 = 模型 key，清单与元数据在 `constant/ChatModelCatalog`）；向量模型 **千问 Qwen-Plus**（DashScope，1536 维）；RAG 用自研 MongoDB 向量库；JWT 鉴权。
+超级智能体 **YuManus（任务制 ReAct）**：提交任务 → 规划分解 → 逐步执行 → 结构化事件流 → 任务报告 + 交付物；主模型千问（`dashscopeChatModel`），子智能体（researcher / knowledgeResearcher / writer，agent-as-tool 派发）用 DeepSeek（`openAiChatModel`）；事件协议与接口见 `ManusTaskService` / `ManusController`。
 三端：**Web**（frontend/）· **微信小程序**（miniprogram/，独立 uni-app 工程）· **安卓壳**（android/，WebView 远程加载已部署 H5，前端零改动）。
 
 ---
@@ -230,7 +231,7 @@
 - 对话：4 个可切模型（`MyChatClientConfig` 一模型一 ChatClient Bean，Bean 名 = 模型 key）——deepseek-flash / deepseek-v4-pro 走 `spring.ai.openai.*`；qwen3.7-plus / qwen3.8-flash 走 dashscope **兼容模式**端点（`spring.ai.dashscope.*`，见陷阱 61）；清单与元数据在 `constant/ChatModelCatalog`
 - 向量：qwen-plus（`spring.ai.dashscope.*`，1536 维）
 - 向量库：MongoDB（`MongoVectorStore`，集合 `vector_store`；`conditionProperty.ai.bean-type` 可切内存库）
-- Manus 超级智能体：任务数据存 `chat_memory_db` 库 `manus_task` 集合（manus_ 前缀与 `chat_memory` 区分）；`manus.agent.max-steps`（默认 20）/ `manus.agent.pool-size`（默认 4，环境变量 `MANUS_AGENT_POOL_SIZE` 可覆盖，见陷阱 69）；交付物白名单目录 `{user.dir}/tmp/`
+- Manus 超级智能体：任务数据存 `chat_memory_db` 库 `manus_task` 集合（manus_ 前缀与 `chat_memory` 区分）；`manus.agent.max-steps`（默认 20）/ `manus.agent.sub-max-steps`（子智能体，默认 10）/ `manus.agent.pool-size`（默认 4，环境变量 `MANUS_AGENT_POOL_SIZE` 可覆盖，见陷阱 69）；主模型千问、子智能体 DeepSeek；交付物白名单目录 `{user.dir}/tmp/`
 - ADVISOR 链：MyLoggerAdvisor → ReReadingAdvisor → RAG Advisors
 - MCP 客户端默认禁用（`McpFallbackConfig` 兜底，勿删；`local` profile 须显式写 `enabled: false`，否则启动会失败——见陷阱 5）；JVM 必须 `--enable-preview`
 

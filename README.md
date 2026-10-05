@@ -8,7 +8,7 @@
 
 | 功能 | 说明 |
 |------|------|
-| 🤖 **AI 超级智能体** | ReAct 模式 Agent，支持多步推理和工具调用（文件操作、网页搜索、PDF 生成、资源下载等） |
+| 🤖 **AI 超级智能体** | 任务制 ReAct Agent：提交任务后自主规划分解、逐步执行（文件操作、网页搜索、PDF 生成、知识库检索、子智能体派发等），执行过程实时可视化（可折叠时间线），任务报告直接给出答案，产出的文件以交付物卡片提供预览/下载，支持多轮追问与任务记录回放 |
 | 🧠 **个人知识助手** | 多源知识融合问答，基于 RAG 检索笔记与收藏，支持流式对话、引用标注和切片展示 |
 | 📚 **RAG 知识库 + 引用标注** | MongoDB 向量库（自研 MongoVectorStore，应用层余弦检索），AI 回复标注来源编号 `[1]`、`[2]`，展开查看原文切片 |
 | 🔄 **引用持久化** | 引用数据随消息持久化到 MongoDB，刷新页面不丢失 |
@@ -275,7 +275,16 @@ ai-agent/
 | PUT | `/api/ai/knowledge/chat/history/{chatId}/title` | 更新会话标题 |
 | DELETE | `/api/ai/knowledge/chat/history/{chatId}` | 删除会话 |
 | GET | `/api/ai/model/list` | 可切换的大模型清单（含可用性与默认模型，登录即可访问） |
-| GET | `/api/ai/manus/chat` | 超级智能体对话 |
+| GET | `/api/ai/manus/chat` | 超级智能体对话（旧接口，小程序在用） |
+| POST | `/api/ai/manus/task` | 创建 Manus 任务（JSON body：task），返回任务文档 |
+| GET | `/api/ai/manus/task/{taskId}/stream` | 订阅任务事件流（SSE，`after` 参数支持增量回放） |
+| GET | `/api/ai/manus/task/{taskId}` | 任务详情（计划/事件日志/报告/交付物，用于回放） |
+| GET | `/api/ai/manus/task/list` | 任务列表（最近 50 条，含计划进度） |
+| POST | `/api/ai/manus/task/{taskId}/stop` | 停止任务（执行中当步结束即停，排队中直接停止） |
+| POST | `/api/ai/manus/task/{taskId}/message` | 任务多轮追问（终态任务追加消息，开启新一轮执行） |
+| GET | `/api/ai/manus/task/{taskId}/deliverables` | 任务交付物清单 |
+| GET | `/api/ai/manus/task/{taskId}/deliverable/{index}/download` | 下载交付物文件 |
+| GET | `/api/ai/manus/task/{taskId}/deliverable/{index}/preview` | 在线预览交付物（文本/图片/PDF） |
 | GET | `/api/files/**` | 静态文件服务（访问 `tmp/` 下的 PDF、图片等） |
 | GET | `/api/image-proxy?url=` | 图片代理下载（绕过防盗链，黑名单站点拦截） |
 | POST | `/api/speech/tts` | 文本转语音（CosyVoice，返回 MP3，内容 MD5 缓存） |
@@ -293,6 +302,10 @@ ai-agent/
 | `listPdfFiles` / `deletePdfFile` | PDF 文件管理 |
 | `FileOperationTool` | 文件读写、目录操作 |
 | `executeWorkflow` | 执行预设工作流（pdf_report、image_album），自动编排多工具按序执行 |
+| `planCreate` / `planUpdate` | 任务计划管理（Manus 任务制）：拆解步骤、逐步更新状态 |
+| `knowledgeSearch` | 本地知识库检索（Manus 专用，按任务注入） |
+| `register` | 交付物登记（产出文件 → 报告下方预览/下载卡片） |
+| `delegate` | 子任务派发（agent-as-tool）：researcher 联网研究 / knowledgeResearcher 知识库研究 / writer 文档撰写，DeepSeek 驱动 |
 | `doTerminate` | Agent 任务结束信号 |
 
 ### 📖 RAG 引用标注流程
