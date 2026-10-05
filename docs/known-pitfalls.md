@@ -104,6 +104,30 @@
     - 原因：M6 的流式合并把"任何带 id 的分片"当成新工具调用的开始，而 DashScope 兼容模式给 **3.8 系列**的续传分片带的是 `id:""`（3.7 系列是 `id:null`），同一个调用被劈成「有名字没参数」+「有参数没名字」两条——前者执行触发 `MethodToolCallback` 断言 → 400，后者 `toolName is null` → 500
     - 修复：`config/ToolCallRepairingManager`（实现 `ToolCallingManager`，包一层默认实现）执行前把相邻两半拼成一条、无名字的丢弃、参数为空补 `{}`；只挂在千问 ChatModel 上（DeepSeek 不分片）。**官方 PR #6381 已修，升级 Spring AI 后删掉该类即可**
 
+66. **自写 Agent 执行循环必须复刻 run() 的消息初始化（否则模型全程空转）**：
+    - 现象：任务执行正常（计划工具都调了）但模型反复回复"我没有收到任务描述"，直到步骤耗尽
+    - 原因：绕过 `BaseAgent.run()` 自己写执行循环时，只设置了 systemPrompt/nextStepPrompt，**漏了把用户任务 `messageList.add(new UserMessage(任务))`**——run() 里本会做这一步，手写循环必须逐项核对与 run() 的差异
+    - 修复：执行前补 `agent.getMessageList().add(new UserMessage(taskText))`（ManusTaskService.executeTask）。追问轮的初始消息由 `buildFollowUpContext` 摘要重建生成（含原任务+历次追问+历轮报告+当前计划+最近 10 条事件+本次追问）
+
+67. **Agent 的最后一条消息 ≠ 面向用户的交付物（提示词补丁管不住，要结构性方案）**：
+    - 现象：任务报告只显示"所有计划步骤都已完成，现在我将调用doTerminate工具结束任务"这类过程独白，用户拿不到答案；提示词两轮强化（"第一句直接给结论""禁止过程性表述"）后**仍偶发**
+    - 原因：模型把"生成最终报告"当成一个**计划步骤**——答案写在中间某步的 think 里，而最后一条消息只剩调用 doTerminate 的独白；取"最后一条有文本的思考"当报告必然命中独白
+    - 修复：**收尾专职报告生成**——任务 COMPLETED 时后端额外做一次无工具的 LLM 调用（`generateFinalReport`：输入=用户问题+本轮执行记录摘要，输出直接作 finalReport），失败才回退思考文本。实测对比类任务报告第一句即完整结论并带表格、零过程性表述。代价：每完成轮多一次 LLM 调用（无工具、短输出，可控）
+
+68. **文件路径白名单校验用字符串 startsWith 会被同级目录绕过**：
+    - 隐患：`"...\\ai-agent\\tmp2\\x".startsWith("...\\ai-agent\\tmp")` 为 true——`tmp2`、`tmp-backup` 等同级目录都能过校验；被校验的相对路径又来自模型输出/库内数据（可被篡改），等于白名单失效
+    - 修复：`Path.startsWith(根目录)`（组件级比较）+ `根目录.relativize(path)` 推导相对路径；**登记侧与下载/预览侧都要校验**（后者防库内数据被篡改）；同时排除 `path.equals(根目录)` 自身
+
+69. **spring-boot:run 的 jvmArguments 值含空格只生效第一段**：
+    - 现象：`-Dspring-boot.run.jvmArguments="--enable-preview -Dfile.encoding=UTF-8 -Dmanus.agent.pool-size=1"` 启动正常但 `pool-size` 不生效（线程名出现 manus-task-2 证实）
+    - 原因：Maven CLI 把带空格的 `-D` 值按空格拆分，只有第一段进 `jvmArguments`，其余被当成 Maven 自身 JVM 的属性，**不传给应用 JVM**
+    - 修复：多参数传递改用环境变量——Spring 的 SystemEnvironmentPropertySource 会把 `MANUS_AGENT_POOL_SIZE` 映射给 `@Value("${manus.agent.pool-size}")`（点/横线转下划线+大写），实测生效
+
+70. **对 MongoDB 库内字段/键名的假设必须直查验证**：
+    - 现象：知识检索工具的来源标注全部显示"未命名笔记"（代码读 `metadata.get("title")`）
+    - 根因：向量库切片的 metadata 实际键是 `['filename','category','lang','status']`——**没有 title**；凭上游加载器代码片段推断键名不可靠
+    - 修复：取值做 title→filename 回退；教训是写取值逻辑前先用 pymongo/Compass 查一条真实文档（本机无 mongosh，pymongo 可用）
+
 ---
 
 ## 前端陷阱（Vue Web）
@@ -158,6 +182,11 @@
     - 修复：把顶部留白移出滚动区——桌面端放到外层容器 `.input-composer { padding-top }`，移动端（容器是 `display: contents` 没有盒子）改用 textarea 的 `margin-top`；同时把增长上限从固定 `120px` 放宽到 `30vh`，自适应 JS 改为读 CSS 的 `max-height`（避免两处数值脱钩）
 
 64. **桌面/移动共用一份 DOM 做"控件全收进输入框"布局**：三个要点缺一不可——① 桌面端的内层容器在移动端 `display: contents`，让输入框与工具条直接成为外层输入区的排布项（否则工具条被"关"在容器里出不去）；② 工具条 `flex: 1 1 0`，在换行计算里不吃掉整行（否则麦克风/发送被挤到第三行，实测第一版就是这样）；③ 模型按钮 `width: 100%`，因为按钮是 fit-content 宽度、不跟随容器收缩，会溢出压到语音按钮上（实测与语音按钮重叠约 35px）
+
+71. **SSE 客户端帧解析必须逐帧拆分（整段切分会在多帧同达时静默丢事件）**：
+    - 现象：Manus 任务页多轮追问时，追问气泡/新轮过程/新报告全部不实时显示，**刷新页面才出现**；且后端数据完整，无任何报错——故障延迟爆发（丢的是"未来请求的起点"），极难排查
+    - 原因：`parseFrames` 按 `buffer.lastIndexOf('\n\n')` 只切出"最后一个分隔符之前"的**整段**当一帧解析——服务端在一个 TCP 段里连续推送多条事件（同一把任务锁内相继 broadcast `plan_updated`+`tool_result` 时必然发生）时，两帧的 data 行被拼成一个字符串 `JSON.parse` 必然失败，`console.warn` 后**两条都丢**；丢事件使前端 `events.length` 小于后端真实数量，增量订阅 `after` 偏移，后续重订阅跳过 `user_message` → 轮次无法切分
+    - 修复：非 flush 分支改为 `const complete = buffer.substring(0, idx); buffer = buffer.substring(idx + 2); frames = complete.split('\n\n')` 逐帧解析；JSON.parse 失败的 warn 日志带上原始 frame 便于发现。**排查工具**：页面注入 fetch 包装 tee 出第二流记录原始帧类型序列，一次就能看到 `user_message` 深陷在后续事件中间（正常应是重订阅首帧）
 
 ---
 

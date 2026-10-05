@@ -184,6 +184,11 @@
 59. **「禁止改自己」不等于「至少留一个管理员」**：无事务时两个管理员并发互降会把管理员清零，须写入后复查管理员数并在为 0 时回滚
 61. **千问两款必须走 OpenAI 兼容模式端点**：原生文本端点不支持 qwen3.7-plus / qwen3.8-flash（`InvalidParameter: url error` → SDK 聚合分片 NPE → 500），用 `OpenAiChatModel` 指向 dashscope 兼容模式
 62. **Spring AI M6 会把流式工具调用拆成两条**：DashScope 给 3.8 系列续传分片带 `id:""`，表现为 `toolInput cannot be null or empty`(400) / `toolName is null`(500)；用 `ToolCallRepairingManager` 拼接（官方 PR #6381 已修，升级 Spring AI 后可删）
+66. **自写 Agent 执行循环必须复刻 run() 的消息初始化**：绕过 `BaseAgent.run` 自己写循环时漏了把用户任务 `messageList.add(new UserMessage(任务))` → 模型拿不到任务全程空转；手写循环与 run() 的差异要逐项核对
+67. **Agent 最后一条消息 ≠ 面向用户的交付物**：模型常把"生成报告"当计划步骤，最后一条只剩"现在调用 doTerminate"类过程独白——提示词补丁管不住；任务收尾必须做一次**专职无工具的报告生成调用**（输入=用户问题+执行记录摘要，输出直接作 finalReport），失败才回退思考文本
+68. **文件路径白名单校验必须用 Path 组件级比较**：字符串 `startsWith` 会被同级目录（`tmp2`、`tmp-backup`）绕过；`Path.startsWith(根目录)` + `relativize` 推导相对路径，登记与下载/预览两处都要校验
+69. **spring-boot:run 的 jvmArguments 值含空格只生效第一段**：`-Dspring-boot.run.jvmArguments="a -Db -Dc"` 中 b、c 被 Maven 吞成自身属性不进应用 JVM；多参数传递改用环境变量（`@Value("${manus.agent.pool-size:4}")` 可由 `MANUS_AGENT_POOL_SIZE` 映射）
+70. **对 MongoDB 库内字段/键名的假设必须直查验证**：向量库切片 metadata 以为有 `title` 实为 `filename`（pymongo/Compass 一查便知）；写取值逻辑前先查真实存储结构
 
 ### 前端陷阱（Vue Web）
 6. **localStorage 非响应式**：必须用 auth.js 响应式 ref，禁止 computed 里读 getUsername()
@@ -206,6 +211,7 @@
 60. **后台标签页（`document.hidden`）会被浏览器节流**：CSS 过渡不结束（元素残留 DOM）、定时器（toast 自动消失）延迟、浏览器自动化的可操作性检查超时——验证页面行为前先确认 `document.visibilityState`
 63. **textarea 的上内边距在滚动区内**：文字超长内部滚动会把顶部留白顶出可视区（看着"留白越来越少"）；顶部留白要放在外层容器或改用 `margin`
 64. **移动端"控件全进输入框"布局**：桌面/移动共用一份 DOM 时，内层容器用 `display: contents` 让出，工具条 `flex: 1 1 0` 吃剩余宽度（否则整行换行）、模型按钮 `width: 100%`（否则按钮是 fit-content 会压到语音按钮）
+71. **SSE 客户端帧解析必须逐帧拆分**：按 `lastIndexOf('\n\n')` 整段切分时，一个网络包到达多条帧会拼成一个 JSON 解析失败**静默丢弃** → 事件缺失使增量订阅起点偏移、后续请求被跳过（故障延迟爆发极难排查）；`split('\n\n')` 后最后一段留在 buffer，其余逐帧解析
 
 ### 脚本工具陷阱（html-to-md / 文档处理）
 35. **HtmlToMarkdownConverter 要点**：getWholeText / 递归子节点防自环 / 跳过代码围栏 / 保留原文
@@ -224,6 +230,7 @@
 - 对话：4 个可切模型（`MyChatClientConfig` 一模型一 ChatClient Bean，Bean 名 = 模型 key）——deepseek-flash / deepseek-v4-pro 走 `spring.ai.openai.*`；qwen3.7-plus / qwen3.8-flash 走 dashscope **兼容模式**端点（`spring.ai.dashscope.*`，见陷阱 61）；清单与元数据在 `constant/ChatModelCatalog`
 - 向量：qwen-plus（`spring.ai.dashscope.*`，1536 维）
 - 向量库：MongoDB（`MongoVectorStore`，集合 `vector_store`；`conditionProperty.ai.bean-type` 可切内存库）
+- Manus 超级智能体：任务数据存 `chat_memory_db` 库 `manus_task` 集合（manus_ 前缀与 `chat_memory` 区分）；`manus.agent.max-steps`（默认 20）/ `manus.agent.pool-size`（默认 4，环境变量 `MANUS_AGENT_POOL_SIZE` 可覆盖，见陷阱 69）；交付物白名单目录 `{user.dir}/tmp/`
 - ADVISOR 链：MyLoggerAdvisor → ReReadingAdvisor → RAG Advisors
 - MCP 客户端默认禁用（`McpFallbackConfig` 兜底，勿删；`local` profile 须显式写 `enabled: false`，否则启动会失败——见陷阱 5）；JVM 必须 `--enable-preview`
 
