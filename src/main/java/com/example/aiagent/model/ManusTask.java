@@ -24,6 +24,9 @@ public class ManusTask {
     @Id
     private String id;
 
+    // 创建人用户名（数据隔离：普通用户仅能访问自己的任务，管理员可访问全部；存量无属主的任务归管理员可见）
+    private String username;
+
     // 列表展示标题（创建时截取任务描述前 20 字）
     private String title;
 

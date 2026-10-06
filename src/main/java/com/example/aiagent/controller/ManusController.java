@@ -2,7 +2,9 @@ package com.example.aiagent.controller;
 
 import com.example.aiagent.model.ManusTask;
 import com.example.aiagent.model.ManusTaskListItem;
+import com.example.aiagent.service.AuthService;
 import com.example.aiagent.service.ManusTaskService;
+import jakarta.servlet.http.HttpServletRequest;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.core.io.FileSystemResource;
@@ -10,9 +12,11 @@ import org.springframework.core.io.Resource;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
@@ -29,6 +33,7 @@ import java.util.Set;
  * Manus 超级智能体专用接口（ReAct 任务制）
  * 与旧接口 /ai/manus/chat 完全独立：旧接口服务于小程序的会话式调用，保持原样不动；
  * 本控制器提供任务制的创建、事件订阅、详情回放、列表、停止、多轮追问与交付物预览下载能力
+ * 数据隔离：普通用户仅能访问自己创建的任务，管理员可访问全部（用户名校验在服务层）
  */
 @Slf4j
 @RestController
@@ -42,17 +47,19 @@ public class ManusController {
     private static final Set<String> PREVIEWABLE_TYPES = Set.of("pdf", "image", "text");
 
     private final ManusTaskService manusTaskService;
+    private final AuthService authService;
 
     /**
      * 创建任务并开始异步执行
      *
-     * @param body 请求体，task 字段为任务描述
+     * @param body    请求体，task 字段为任务描述
+     * @param request HTTP 请求（取当前登录用户）
      * @return 已创建的任务文档（含 ID 与初始状态）
      */
     @PostMapping("/task")
-    public ManusTask createTask(@RequestBody Map<String, String> body) {
+    public ManusTask createTask(@RequestBody Map<String, String> body, HttpServletRequest request) {
         String task = body != null ? body.get("task") : null;
-        return manusTaskService.createTask(task);
+        return manusTaskService.createTask(task, currentUsername(request));
     }
 
     /**
@@ -60,24 +67,28 @@ public class ManusController {
      * 每条事件为 JSON：type（plan_updated/think/tool_call/tool_result/final/error）+ 时间戳与内容
      * 订阅时先回放已发生的事件，任务已结束时回放后立即关闭
      *
-     * @param taskId 任务 ID
+     * @param taskId  任务 ID
+     * @param after   起始事件序号（增量订阅）
+     * @param request HTTP 请求（取当前登录用户）
      * @return SSE 连接
      */
     @GetMapping(value = "/task/{taskId}/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
     public SseEmitter subscribeTask(@PathVariable String taskId,
-                                    @RequestParam(defaultValue = "0") int after) {
-        return manusTaskService.subscribe(taskId, after);
+                                    @RequestParam(defaultValue = "0") int after,
+                                    HttpServletRequest request) {
+        return manusTaskService.subscribe(taskId, after, currentUsername(request));
     }
 
     /**
      * 查询任务详情（含计划、事件日志与最终报告，用于回放）
      *
-     * @param taskId 任务 ID
+     * @param taskId  任务 ID
+     * @param request HTTP 请求（取当前登录用户）
      * @return 任务文档
      */
     @GetMapping("/task/{taskId}")
-    public ResponseEntity<ManusTask> getTask(@PathVariable String taskId) {
-        ManusTask taskDoc = manusTaskService.getTask(taskId);
+    public ResponseEntity<ManusTask> getTask(@PathVariable String taskId, HttpServletRequest request) {
+        ManusTask taskDoc = manusTaskService.getTask(taskId, currentUsername(request));
         if (taskDoc == null) {
             return ResponseEntity.notFound().build();
         }
@@ -85,25 +96,71 @@ public class ManusController {
     }
 
     /**
-     * 查询任务列表（按更新时间倒序，最多 50 条，含计划进度）
+     * 查询任务列表（按更新时间倒序，最多 50 条，含计划进度；普通用户仅见自己的任务）
      *
+     * @param request HTTP 请求（取当前登录用户）
      * @return 任务列表
      */
     @GetMapping("/task/list")
-    public List<ManusTaskListItem> listTasks() {
-        return manusTaskService.listTasks();
+    public List<ManusTaskListItem> listTasks(HttpServletRequest request) {
+        return manusTaskService.listTasks(currentUsername(request));
+    }
+
+    /**
+     * 修改任务标题
+     *
+     * @param taskId  任务 ID
+     * @param body    请求体，title 字段为新标题
+     * @param request HTTP 请求（取当前登录用户）
+     * @return 结果说明
+     */
+    @PutMapping("/task/{taskId}/title")
+    public Map<String, String> updateTitle(@PathVariable String taskId, @RequestBody Map<String, String> body,
+                                           HttpServletRequest request) {
+        String title = body != null ? body.get("title") : null;
+        manusTaskService.updateTitle(taskId, title, currentUsername(request));
+        return Map.of("message", "标题已更新");
+    }
+
+    /**
+     * 删除单个任务（仅终态任务可删：执行中/排队中的任务须先停止）
+     *
+     * @param taskId  任务 ID
+     * @param request HTTP 请求（取当前登录用户）
+     * @return 结果说明
+     */
+    @DeleteMapping("/task/{taskId}")
+    public Map<String, String> deleteTask(@PathVariable String taskId, HttpServletRequest request) {
+        manusTaskService.deleteTask(taskId, currentUsername(request));
+        return Map.of("message", "任务已删除");
+    }
+
+    /**
+     * 批量删除任务（整批校验，任一任务不存在/无权限/仍在执行或排队中则整批拒绝）
+     *
+     * @param body    请求体，ids 字段为任务 ID 数组
+     * @param request HTTP 请求（取当前登录用户）
+     * @return 删除数量与结果说明
+     */
+    @PostMapping("/task/batch-delete")
+    public Map<String, Object> batchDeleteTasks(@RequestBody Map<String, List<String>> body,
+                                                HttpServletRequest request) {
+        List<String> ids = body != null ? body.get("ids") : null;
+        int deleted = manusTaskService.deleteTasks(ids, currentUsername(request));
+        return Map.of("message", "已删除 " + deleted + " 个任务", "deleted", deleted);
     }
 
     /**
      * 停止任务
      * 执行中的任务在当前步骤执行完毕后停止；排队中未开始的任务直接标记停止
      *
-     * @param taskId 任务 ID
+     * @param taskId  任务 ID
+     * @param request HTTP 请求（取当前登录用户）
      * @return 结果说明
      */
     @PostMapping("/task/{taskId}/stop")
-    public Map<String, String> stopTask(@PathVariable String taskId) {
-        String message = manusTaskService.stopTask(taskId);
+    public Map<String, String> stopTask(@PathVariable String taskId, HttpServletRequest request) {
+        String message = manusTaskService.stopTask(taskId, currentUsername(request));
         return Map.of("message", message);
     }
 
@@ -111,25 +168,28 @@ public class ManusController {
      * 对已结束的任务追加用户追问，任务回到 RUNNING 并重新执行一轮
      * 新事件追加到同一任务文档，回放完整
      *
-     * @param taskId 任务 ID
-     * @param body   请求体，message 字段为追问内容
+     * @param taskId  任务 ID
+     * @param body    请求体，message 字段为追问内容
+     * @param request HTTP 请求（取当前登录用户）
      * @return 更新后的任务文档
      */
     @PostMapping("/task/{taskId}/message")
-    public ManusTask followUp(@PathVariable String taskId, @RequestBody Map<String, String> body) {
+    public ManusTask followUp(@PathVariable String taskId, @RequestBody Map<String, String> body,
+                              HttpServletRequest request) {
         String message = body != null ? body.get("message") : null;
-        return manusTaskService.addFollowUp(taskId, message);
+        return manusTaskService.addFollowUp(taskId, message, currentUsername(request));
     }
 
     /**
      * 查询任务交付物清单
      *
-     * @param taskId 任务 ID
+     * @param taskId  任务 ID
+     * @param request HTTP 请求（取当前登录用户）
      * @return 交付物列表
      */
     @GetMapping("/task/{taskId}/deliverables")
-    public List<ManusTask.Deliverable> listDeliverables(@PathVariable String taskId) {
-        ManusTask taskDoc = manusTaskService.getTask(taskId);
+    public List<ManusTask.Deliverable> listDeliverables(@PathVariable String taskId, HttpServletRequest request) {
+        ManusTask taskDoc = manusTaskService.getTask(taskId, currentUsername(request));
         if (taskDoc == null) {
             throw new IllegalArgumentException("任务不存在：" + taskId);
         }
@@ -139,13 +199,16 @@ public class ManusController {
     /**
      * 下载交付物文件（attachment）
      *
-     * @param taskId 任务 ID
-     * @param index  交付物序号（1 开始）
+     * @param taskId  任务 ID
+     * @param index   交付物序号（1 开始）
+     * @param request HTTP 请求（取当前登录用户）
      * @return 文件流
      */
     @GetMapping("/task/{taskId}/deliverable/{index}/download")
-    public ResponseEntity<Resource> downloadDeliverable(@PathVariable String taskId, @PathVariable int index) {
-        ManusTaskService.DeliverableFile file = manusTaskService.resolveDeliverableFile(taskId, index);
+    public ResponseEntity<Resource> downloadDeliverable(@PathVariable String taskId, @PathVariable int index,
+                                                        HttpServletRequest request) {
+        ManusTaskService.DeliverableFile file =
+                manusTaskService.resolveDeliverableFile(taskId, index, currentUsername(request));
         if (file == null) {
             return notFound("交付物不存在或文件已被清理");
         }
@@ -155,18 +218,35 @@ public class ManusController {
     /**
      * 预览交付物文件（inline；仅文本/图片/PDF 放行）
      *
-     * @param taskId 任务 ID
-     * @param index  交付物序号（1 开始）
+     * @param taskId  任务 ID
+     * @param index   交付物序号（1 开始）
+     * @param request HTTP 请求（取当前登录用户）
      * @return 文件流
      */
     @GetMapping("/task/{taskId}/deliverable/{index}/preview")
-    public ResponseEntity<Resource> previewDeliverable(@PathVariable String taskId, @PathVariable int index) {
-        ManusTaskService.DeliverableFile file = manusTaskService.resolveDeliverableFile(taskId, index);
+    public ResponseEntity<Resource> previewDeliverable(@PathVariable String taskId, @PathVariable int index,
+                                                       HttpServletRequest request) {
+        ManusTaskService.DeliverableFile file =
+                manusTaskService.resolveDeliverableFile(taskId, index, currentUsername(request));
         if (file == null || file.meta().getType() == null
                 || !PREVIEWABLE_TYPES.contains(file.meta().getType())) {
             throw new IllegalArgumentException("该文件类型不支持在线预览，请下载后查看");
         }
         return fileResponse(file, "inline");
+    }
+
+    /**
+     * 取当前登录用户名，未登录直接抛出 401（正常由 AuthFilter 拦截，此处兜底）
+     *
+     * @param request HTTP 请求
+     * @return 用户名
+     */
+    private String currentUsername(HttpServletRequest request) {
+        String username = authService.getCurrentUsername(request);
+        if (username == null) {
+            throw new IllegalArgumentException("未登录或登录已过期，请先登录");
+        }
+        return username;
     }
 
     /**

@@ -215,6 +215,27 @@ export function sendManusFollowUp(taskId, message) {
 }
 
 /**
+ * 修改 Manus 任务标题
+ */
+export function renameManusTask(taskId, title) {
+  return request.put(`/ai/manus/task/${taskId}/title`, { title })
+}
+
+/**
+ * 删除 Manus 任务（仅终态任务可删：执行中/排队中的任务须先停止）
+ */
+export function deleteManusTask(taskId) {
+  return request.delete(`/ai/manus/task/${taskId}`)
+}
+
+/**
+ * 批量删除 Manus 任务（整批校验，任一任务仍在执行/排队中则整批拒绝）
+ */
+export function batchDeleteManusTasks(ids) {
+  return request.post('/ai/manus/task/batch-delete', { ids })
+}
+
+/**
  * 预览交付物：fetch 带 token 拉取 blob 并生成 objectURL
  * 返回 { url, mimeType }；调用方负责在合适时机 URL.revokeObjectURL 回收（陷阱 33）
  */
@@ -291,7 +312,15 @@ export function streamManusTaskEvents(taskId, { onEvent, onDone, onError }, sign
         window.location.href = '/login?returnUrl=' + returnUrl
         return
       }
-      if (!res.ok) throw new Error(res.statusText)
+      if (!res.ok) {
+        // 非 200 响应体是 {code, message} JSON，优先取后端文案（如 403 的"无权限访问该任务"），取不到再退 statusText
+        return res
+          .json()
+          .catch(() => null)
+          .then((data) => {
+            throw new Error(data?.message || res.statusText)
+          })
+      }
       const reader = res.body.getReader()
       const decoder = new TextDecoder()
       function read() {

@@ -1,0 +1,160 @@
+/* 全局 Markdown 内容样式（.markdown-body）
+   AI 回复 / 任务报告等 Markdown 渲染区共用：标题层级、段落行距、列表、引用、
+   行内与块级代码、GFM 表格、分隔线、链接。原先在 KnowledgeChat 等视图内 scoped 复制，收敛于此。 */
+
+.markdown-body {
+  font-size: 0.92rem;
+  line-height: 1.75;
+  color: #1e293b;
+  word-break: break-word;
+}
+
+.markdown-body p {
+  margin: 0.6em 0;
+  line-height: 1.8;
+  word-break: break-word;
+}
+.markdown-body p:first-child { margin-top: 0; }
+.markdown-body p:last-child { margin-bottom: 0; }
+
+.markdown-body h1,
+.markdown-body h2,
+.markdown-body h3,
+.markdown-body h4,
+.markdown-body h5,
+.markdown-body h6 {
+  margin: 1.4em 0 0.6em;
+  font-weight: 600;
+  color: #0f172a;
+  line-height: 1.4;
+}
+.markdown-body h1:first-child,
+.markdown-body h2:first-child,
+.markdown-body h3:first-child,
+.markdown-body h4:first-child { margin-top: 0.2em; }
+/* 报告/回答内的标题不追求文档级巨字号，统一收敛为两个层级感 */
+.markdown-body h1 { font-size: 1.25em; }
+.markdown-body h2 {
+  font-size: 1.15em;
+  padding-left: 0.5em;
+  border-left: 3px solid #10B981;
+}
+.markdown-body h3 { font-size: 1.05em; color: #059669; }
+.markdown-body h4,
+.markdown-body h5,
+.markdown-body h6 { font-size: 1em; color: #059669; }
+
+.markdown-body ul,
+.markdown-body ol {
+  margin: 0.6em 0;
+  padding-left: 1.6em;
+}
+.markdown-body li {
+  margin: 0.35em 0;
+  line-height: 1.75;
+}
+.markdown-body ul li::marker { color: #10B981; }
+
+/* 有序列表：自定义计数器（绿底圆角序号） */
+.markdown-body ol {
+  counter-reset: md-ol;
+  list-style: none;
+  padding-left: 2em;
+}
+.markdown-body ol > li {
+  counter-increment: md-ol;
+  position: relative;
+}
+.markdown-body ol > li::before {
+  content: counter(md-ol);
+  position: absolute;
+  left: -1.9em;
+  top: 0.18em;
+  width: 1.4em;
+  height: 1.4em;
+  border-radius: 6px;
+  background: rgba(16, 185, 129, 0.12);
+  color: #059669;
+  font-size: 0.75em;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.markdown-body blockquote {
+  margin: 0.8em 0;
+  padding: 0.6em 1em;
+  border-left: 3px solid rgba(16, 185, 129, 0.5);
+  background: rgba(16, 185, 129, 0.05);
+  border-radius: 0 8px 8px 0;
+  color: #334155;
+}
+.markdown-body blockquote p { margin: 0.3em 0; }
+
+.markdown-body hr {
+  border: none;
+  height: 1px;
+  margin: 1.4em 0;
+  background: linear-gradient(to right, rgba(16, 185, 129, 0.4), rgba(16, 185, 129, 0.05));
+}
+
+.markdown-body code {
+  padding: 0.15em 0.45em;
+  border-radius: 5px;
+  background: rgba(148, 163, 184, 0.15);
+  color: #047857;
+  font-family: 'JetBrains Mono', Consolas, Monaco, monospace;
+  font-size: 0.88em;
+}
+.markdown-body pre {
+  margin: 0.8em 0;
+  padding: 0.9em 1.1em;
+  border-radius: 10px;
+  border: 1px solid rgba(148, 163, 184, 0.25);
+  background: #f8fafc;
+  overflow-x: auto;
+  line-height: 1.6;
+}
+.markdown-body pre code {
+  padding: 0;
+  background: none;
+  color: #1e293b;
+  font-size: 0.85em;
+}
+
+.markdown-body a {
+  color: #059669;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.markdown-body a:hover { color: #047857; }
+
+.markdown-body img {
+  max-width: 100%;
+  border-radius: 8px;
+}
+
+/* GFM 表格：边框、表头绿底、横向滚动 */
+.markdown-body table {
+  display: block;
+  width: 100%;
+  margin: 0.9em 0;
+  overflow-x: auto;
+  border-collapse: collapse;
+  font-size: 0.92em;
+}
+.markdown-body th,
+.markdown-body td {
+  border: 1px solid #e2e8f0;
+  padding: 0.5em 0.8em;
+  text-align: left;
+  line-height: 1.6;
+  word-break: break-word;
+}
+.markdown-body th {
+  background: rgba(16, 185, 129, 0.08);
+  color: #065f46;
+  font-weight: 600;
+}
+.markdown-body tbody tr:nth-child(even) { background: rgba(148, 163, 184, 0.05); }

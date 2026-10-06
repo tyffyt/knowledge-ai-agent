@@ -10,23 +10,55 @@
           新任务
         </button>
       </div>
-      <div class="task-list">
+      <div class="task-list" @scroll="menuTask = null">
         <div v-if="!history.length && !historyLoading" class="task-list-empty">暂无任务记录</div>
         <div v-if="historyLoading" class="task-list-empty">加载中…</div>
-        <button
+        <div
           v-for="item in history"
           :key="item.id"
           class="history-item"
-          :class="{ current: active && active.id === item.id }"
-          @click="openDetail(item.id)"
+          :class="{ current: active && active.id === item.id && !batchMode, 'batch-mode': batchMode }"
         >
-          <span class="history-item-title">{{ item.title || '未命名任务' }}</span>
-          <span class="history-item-meta">
-            <span class="status-dot" :class="statusKey(item.status)"></span>
-            <span class="status-text">{{ statusLabel(item.status) }}</span>
-            <span v-if="item.totalSteps" class="history-progress">{{ item.doneSteps }}/{{ item.totalSteps }} 步</span>
-            <span class="history-time">{{ formatTime(item.updatedAt || item.createdAt) }}</span>
-          </span>
+          <div class="history-item-main" @click="onItemClick(item)">
+            <span class="history-item-title">{{ item.title || '未命名任务' }}</span>
+            <span class="history-item-meta">
+              <span class="status-dot" :class="statusKey(item.status)"></span>
+              <span class="status-text">{{ statusLabel(item.status) }}</span>
+              <span v-if="item.totalSteps" class="history-progress">{{ item.doneSteps }}/{{ item.totalSteps }} 步</span>
+              <span class="history-time">{{ formatTime(item.updatedAt || item.createdAt) }}</span>
+            </span>
+          </div>
+          <!-- 非批量模式：三点按钮（菜单经 Teleport 渲染到 body，避免被列表滚动容器裁剪） -->
+          <div v-if="!batchMode" class="history-more-wrap">
+            <button class="history-more-btn" @click.stop="toggleMenu(item, $event)" aria-label="更多操作">
+              <MoreVertical class="icon" size="18" />
+            </button>
+          </div>
+          <!-- 批量模式：勾选圆圈（执行中/排队中的任务后端禁删，勾选禁用） -->
+          <div
+            v-else-if="isFinishedStatus(item.status)"
+            class="batch-check-wrap"
+            @click.stop="toggleSelectTask(item.id)"
+          >
+            <span v-if="selectedTaskIds.includes(item.id)" class="batch-circle selected">
+              <Check class="icon" size="14" />
+            </span>
+            <span v-else class="batch-circle"></span>
+          </div>
+          <div
+            v-else
+            class="batch-check-wrap disabled"
+            :title="item.status === 'RUNNING' ? '执行中的任务须先停止再删除' : '排队中的任务须先停止再删除'"
+          >
+            <span class="batch-circle disabled"></span>
+          </div>
+        </div>
+      </div>
+      <!-- 批量管理模式底部按钮条（取消 / 删除(N)） -->
+      <div v-if="batchMode" class="batch-bar">
+        <button class="batch-bar-btn" @click="exitBatchMode">取消</button>
+        <button class="batch-bar-btn delete" :disabled="selectedTaskIds.length === 0" @click="confirmBatchDelete = true">
+          删除 ({{ selectedTaskIds.length }})
         </button>
       </div>
     </aside>
@@ -43,16 +75,6 @@
           <span v-if="active.status === 'RUNNING'" class="pulse-dot"></span>
           {{ statusLabel(active.status) }}
         </span>
-        <button
-          v-if="running && !stopping"
-          class="stop-btn"
-          @click="stopTask"
-          aria-label="停止任务"
-        >
-          <Square class="icon" size="14" />
-          停止
-        </button>
-        <span v-if="stopping" class="stopping-hint">停止中…</span>
         <button
           class="history-toggle"
           :class="{ active: sidebarOpen }"
@@ -106,7 +128,7 @@
             </div>
 
             <!-- 执行过程（透明折叠行；执行中常驻：无事件时显示"正在思考"等待动画） -->
-            <div v-if="round.processEvents.length || (round.plan && round.plan.length) || isRoundRunning(ri)" class="process-line">
+            <div v-if="round.processItems.length || (round.plan && round.plan.length) || isRoundRunning(ri)" class="process-line">
               <button
                 class="process-toggle"
                 @click="toggleRound(ri)"
@@ -118,7 +140,7 @@
                 <ChevronDown class="chev" :class="{ expanded: !isRoundCollapsed(ri) }" size="14" />
               </button>
               <div v-if="!isRoundCollapsed(ri)" class="process-detail">
-                <div v-if="!round.processEvents.length && !(round.plan && round.plan.length)" class="process-loading">正在思考中，请稍候…</div>
+                <div v-if="!round.processItems.length && !(round.plan && round.plan.length)" class="process-loading">正在思考中，请稍候…</div>
                 <!-- 计划进度面板 -->
                 <section v-if="round.plan && round.plan.length" class="plan-panel" aria-label="任务计划">
                   <div class="section-head">
@@ -145,55 +167,81 @@
                   </div>
                 </section>
 
-                <!-- 该轮事件 -->
+                <!-- 该轮事件（工具调用与结果合并为一行，点击展开参数与完整结果） -->
                 <div
-                  v-for="(ev, i) in round.processEvents"
+                  v-for="(item, i) in round.processItems"
                   :key="i"
                   class="event-card"
-                  :class="[ev.type, { 'sub-agent': ev.agent && ev.agent !== 'main' }]"
+                  :class="[item.kind === 'tool' ? 'tool' : item.ev.type, { 'sub-agent': eventAgent(item) !== 'main' }]"
                 >
-                  <div class="event-head" @click="ev.type === 'tool_result' ? toggleExpand(ri, i) : null">
-                    <span class="event-icon">
-                      <Brain v-if="ev.type === 'think'" size="14" />
-                      <Wrench v-else-if="ev.type === 'tool_call'" size="14" />
-                      <ChevronRight v-else-if="ev.type === 'tool_result'" size="14" :class="{ expanded: expandedSet.has(ri + '-' + i) }" />
-                      <ListChecks v-else-if="ev.type === 'plan_updated'" size="14" />
-                      <CircleAlert v-else-if="ev.type === 'error'" size="14" />
-                      <FileText v-else size="14" />
-                    </span>
-                    <span class="event-title">{{ eventTitle(ev) }}</span>
-                    <span class="event-time">{{ formatClock(ev.timestamp) }}</span>
-                  </div>
-                  <div
-                    v-if="ev.type === 'think' && ev.content"
-                    class="event-body markdown-body"
-                    v-html="renderMarkdown(ev.content)"
-                  ></div>
-                  <div v-if="ev.type === 'tool_call' && ev.toolArgs" class="event-body">
-                    <code class="tool-args">{{ formatArgs(ev.toolArgs) }}</code>
-                  </div>
-                  <div v-if="ev.type === 'tool_result' && expandedSet.has(ri + '-' + i) && ev.toolResult" class="event-body">
-                    <pre class="tool-result">{{ ev.toolResult }}</pre>
-                  </div>
-              <div v-if="ev.type === 'plan_updated'" class="event-body compact">
-                {{ planSummary(ev.steps) }}
+                  <!-- 工具调用合并行 -->
+                  <template v-if="item.kind === 'tool'">
+                    <div class="event-head" @click="item.result ? toggleExpand(ri, i) : null">
+                      <span class="event-icon">
+                        <Loader v-if="!item.result" size="14" class="spin" />
+                        <Wrench v-else size="14" />
+                      </span>
+                      <span class="event-title">
+                        {{ eventTitle(item.call) }}<span v-if="item.result" class="tool-brief">{{ toolBrief(item.result) }}</span>
+                      </span>
+                      <span class="event-time">{{ formatClock((item.result || item.call).timestamp) }}</span>
+                      <ChevronRight v-if="item.result" class="chev" :class="{ expanded: expandedSet.has(ri + '-' + i) }" size="14" />
+                    </div>
+                    <div v-if="item.result && expandedSet.has(ri + '-' + i)" class="event-body">
+                      <code v-if="item.call.toolArgs" class="tool-args">{{ formatArgs(item.call.toolArgs) }}</code>
+                      <pre v-if="item.result.toolResult" class="tool-result">{{ item.result.toolResult }}</pre>
+                    </div>
+                  </template>
+                  <!-- 普通事件行（思考/计划/错误/未配对的工具事件） -->
+                  <template v-else>
+                    <div class="event-head" @click="item.ev.type === 'tool_result' ? toggleExpand(ri, i) : null">
+                      <span class="event-icon">
+                        <Brain v-if="item.ev.type === 'think'" size="14" />
+                        <Wrench v-else-if="item.ev.type === 'tool_call'" size="14" />
+                        <ChevronRight v-else-if="item.ev.type === 'tool_result'" size="14" :class="{ expanded: expandedSet.has(ri + '-' + i) }" />
+                        <ListChecks v-else-if="item.ev.type === 'plan_updated'" size="14" />
+                        <CircleAlert v-else-if="item.ev.type === 'error'" size="14" />
+                        <FileText v-else size="14" />
+                      </span>
+                      <span class="event-title">{{ eventTitle(item.ev) }}</span>
+                      <span class="event-time">{{ formatClock(item.ev.timestamp) }}</span>
+                    </div>
+                    <div
+                      v-if="item.ev.type === 'think' && item.ev.content"
+                      class="event-body markdown-body"
+                      v-html="renderMarkdown(item.ev.content)"
+                    ></div>
+                    <div v-if="item.ev.type === 'tool_call' && item.ev.toolArgs" class="event-body">
+                      <code class="tool-args">{{ formatArgs(item.ev.toolArgs) }}</code>
+                    </div>
+                    <div v-if="item.ev.type === 'tool_result' && expandedSet.has(ri + '-' + i) && item.ev.toolResult" class="event-body">
+                      <pre class="tool-result">{{ item.ev.toolResult }}</pre>
+                    </div>
+                    <div v-if="item.ev.type === 'plan_updated'" class="event-body compact">
+                      {{ planSummary(item.ev.steps) }}
+                    </div>
+                  </template>
               </div>
             </div>
-          </div>
-            </div>
+              </div>
 
             <!-- 该轮任务报告 -->
             <section v-if="round.report" class="report-panel" aria-label="任务报告">
               <div class="section-head">
                 <FileText class="icon" size="16" />
                 <span>任务报告</span>
+                <button class="copy-report-btn" @click="copyReport(round, ri)" aria-label="复制报告">
+                  <CircleCheck v-if="copiedRound === ri" class="icon copied" size="14" />
+                  <Copy v-else class="icon" size="14" />
+                  <span>{{ copiedRound === ri ? '已复制' : '复制' }}</span>
+                </button>
               </div>
               <div class="report-body markdown-body" v-html="renderMarkdown(round.report)"></div>
             </section>
 
-            <!-- 该轮交付物（紧跟报告，预览/下载即点即用） -->
+            <!-- 该轮交付物（紧跟报告，预览/下载即点即用；图标按文件类型区分） -->
             <div v-for="d in round.deliverables" :key="d.index" class="deliverable-chip deliverable-inline">
-              <FileText class="icon" size="14" />
+              <component :is="deliverableIcon(d.type)" class="icon" size="14" />
               <span class="deliverable-name">{{ d.name }}</span>
               <span class="deliverable-type">{{ deliverableTypeLabel(d.type) }}</span>
               <button class="deliverable-btn" @click.stop="previewDeliverable(d)" aria-label="预览">预览</button>
@@ -212,16 +260,30 @@
         </button>
       </div>
 
-      <!-- 输入区 -->
+      <!-- 输入区（发送按钮与文本域垂直居中；运行/排队期间变红色「停止」） -->
       <div class="input-area">
         <textarea
           v-model="inputText"
           :placeholder="followUpMode ? '继续追问或下达新指令…' : '描述你的任务，例如：搜索最新的大模型资讯，整理成一份摘要…'"
-          rows="2"
+          rows="1"
           :disabled="creating"
-          @keydown.enter.exact.prevent="send"
+          @keydown.enter.exact.prevent="onEnterKey"
         ></textarea>
         <button
+          v-if="running"
+          class="send-btn stop"
+          :disabled="stopping"
+          @click="stopTask"
+          aria-label="停止任务"
+        >
+          <span class="btn-inner">
+            <Loader v-if="stopping" class="icon spin" size="18" />
+            <Square v-else class="icon" size="15" />
+            <span class="btn-text">{{ stopping ? '停止中' : '停止' }}</span>
+          </span>
+        </button>
+        <button
+          v-else
           class="send-btn"
           :disabled="creating || !inputText.trim()"
           @click="send"
@@ -248,11 +310,82 @@
         <img :src="previewImage.src" :alt="previewImage.alt" class="image-preview-img" @click.self="closePreview" />
       </div>
     </Teleport>
+
+    <!-- 历史项三点菜单（Teleport 到 body：fixed 定位，脱离任务列表滚动容器，不被裁剪） -->
+    <Teleport to="body">
+      <div v-if="menuTask" class="history-menu-fixed" :style="menuStyle">
+        <button class="history-menu-item" @click.stop="onBatchManage">
+          <ListChecks class="menu-icon" size="18" />
+          批量管理
+        </button>
+        <button class="history-menu-item" @click.stop="onEditTitle(menuTask)">
+          <Pencil class="menu-icon" size="18" />
+          修改标题
+        </button>
+        <button
+          class="history-menu-item danger"
+          :disabled="!isFinishedStatus(menuTask.status)"
+          :title="isFinishedStatus(menuTask.status) ? '' : '执行中的任务须先停止再删除'"
+          @click.stop="openDeleteConfirm(menuTask)"
+        >
+          <Trash2 class="menu-icon" size="18" />
+          删除任务
+        </button>
+      </div>
+    </Teleport>
+
+    <!-- 删除任务确认弹窗 -->
+    <Teleport to="body">
+      <div v-if="confirmDeleteTask" class="modal-overlay" @click="confirmDeleteTask = null">
+        <div class="modal-content" @click.stop>
+          <div class="modal-title">删除任务</div>
+          <div class="modal-desc">确定要删除任务「{{ confirmDeleteTask.title || '未命名任务' }}」吗？删除后无法恢复。</div>
+          <div class="modal-actions">
+            <button class="modal-btn cancel" @click="confirmDeleteTask = null">取消</button>
+            <button class="modal-btn confirm" @click="doDeleteTask(confirmDeleteTask.id)">确认删除</button>
+          </div>
+        </div>
+      </div>
+    </Teleport>
+
+    <!-- 修改标题弹窗 -->
+    <Teleport to="body">
+      <div v-if="editTitleVisible" class="modal-overlay" @click="closeEditTitle">
+        <div class="modal-content" @click.stop>
+          <div class="modal-title left">修改标题</div>
+          <input
+            v-model="editTitleText"
+            class="edit-title-input modal-title-input"
+            maxlength="40"
+            @keyup.enter="confirmEditTitle"
+            @keyup.escape="closeEditTitle"
+          />
+          <div class="modal-actions">
+            <button class="modal-btn cancel" @click="closeEditTitle">取消</button>
+            <button class="modal-btn confirm green" @click="confirmEditTitle">确定</button>
+          </div>
+        </div>
+      </div>
+    </Teleport>
+
+    <!-- 批量删除确认弹窗 -->
+    <Teleport to="body">
+      <div v-if="confirmBatchDelete" class="modal-overlay" @click="confirmBatchDelete = false">
+        <div class="modal-content" @click.stop>
+          <div class="modal-title left">删除任务记录</div>
+          <div class="modal-desc left">删除后内容将无法恢复，确认删除选中的 {{ selectedTaskIds.length }} 个任务？</div>
+          <div class="modal-actions">
+            <button class="modal-btn cancel" @click="confirmBatchDelete = false">取消</button>
+            <button class="modal-btn confirm" @click="doBatchDelete">删除</button>
+          </div>
+        </div>
+      </div>
+    </Teleport>
   </div>
 </template>
 
 <script setup>
-import { ref, reactive, computed, nextTick, onMounted, onUnmounted } from 'vue'
+import { ref, reactive, computed, inject, nextTick, onMounted, onUnmounted } from 'vue'
 import {
   createManusTask,
   stopManusTask,
@@ -262,6 +395,9 @@ import {
   sendManusFollowUp,
   downloadManusDeliverable,
   fetchManusDeliverablePreview,
+  renameManusTask,
+  deleteManusTask,
+  batchDeleteManusTasks,
 } from '../api/request'
 import { linkifyHtml } from '../utils/linkify'
 import { previewImage, openPreview, closePreview } from '../utils/previewImage'
@@ -271,8 +407,11 @@ import {
   ArrowLeft, ArrowRight, Square, X,
   Brain, Wrench, ListChecks, ListTodo, Plus,
   CircleCheck, CircleDashed, CircleAlert, ChevronDown, ChevronRight,
-  Loader, FileText, Ban,
+  Loader, FileText, Ban, MoreVertical, Check, Pencil, Trash2,
+  Copy, Image as ImageIcon, File,
 } from '@lucide/vue'
+
+const showToast = inject('showToast', () => {})
 
 const STATUS_LABELS = {
   PENDING: '排队中',
@@ -304,26 +443,38 @@ const abortController = ref(null)
 const running = ref(false)
 
 // 轮次对话流：按 user_message 事件把事件日志切分为多轮
-// 每轮 = 用户问题（原始任务或追问）+ 执行过程事件 + 该轮报告（轮内最后一个 final 事件）+ 该轮交付物（渲染在报告下方）
+// 每轮 = 用户问题（原始任务或追问）+ 过程条目 + 该轮报告（轮内最后一个 final 事件）+ 该轮交付物（渲染在报告下方）
+// 过程条目 processItems：普通事件为 { kind:'single', ev }；工具调用与结果合并为 { kind:'tool', call, result } 一行
 const rounds = computed(() => {
   if (!active.value) return []
   const list = []
-  let current = { question: active.value.task, processEvents: [], plan: null, report: null, deliverables: [] }
+  let current = { question: active.value.task, processItems: [], plan: null, report: null, deliverables: [] }
   let deliverableSeq = 0
   for (const ev of (active.value.events || [])) {
     if (ev.type === 'user_message') {
       list.push(current)
       // 新一轮计划置空：仅展示该轮内 planCreate/planUpdate 产生的快照，避免误显示上一轮的旧计划
-      current = { question: ev.content || '', processEvents: [], plan: null, report: null, deliverables: [] }
+      current = { question: ev.content || '', processItems: [], plan: null, report: null, deliverables: [] }
     } else if (ev.type === 'final') {
       current.report = ev.content || current.report
     } else if (ev.type === 'deliverable' && ev.deliverable) {
       // 交付物独立收集，渲染在该轮报告下方（不进过程明细，避免折叠后看不到）
       deliverableSeq += 1
       current.deliverables.push({ ...ev.deliverable, index: deliverableSeq })
+    } else if (ev.type === 'tool_result') {
+      // 结果附加到最近的同名未配对工具调用上（降噪：call+result 合并为一行）
+      const open = [...current.processItems].reverse().find(
+        (item) => item.kind === 'tool' && item.call.toolName === ev.toolName && !item.result)
+      if (open) {
+        open.result = ev
+      } else {
+        current.processItems.push({ kind: 'single', ev })
+      }
+    } else if (ev.type === 'tool_call') {
+      current.processItems.push({ kind: 'tool', call: ev, result: null })
     } else {
       if (ev.type === 'plan_updated' && ev.steps) current.plan = ev.steps
-      current.processEvents.push(ev)
+      current.processItems.push({ kind: 'single', ev })
     }
   }
   list.push(current)
@@ -342,7 +493,7 @@ function isRoundCollapsed(ri) {
 // 轮次标题：执行中且尚无任何事件时为"正在思考"，有事件后为"正在执行"，结束为"执行过程"
 function roundThinking(ri) {
   const round = rounds.value[ri]
-  return isRoundRunning(ri) && round && !round.processEvents.length
+  return isRoundRunning(ri) && round && !round.processItems.length
 }
 function roundTitle(ri) {
   if (!isRoundRunning(ri)) return '执行过程'
@@ -354,6 +505,7 @@ function toggleRound(ri) {
 function resetRoundState() {
   Object.keys(roundCollapsed).forEach((k) => delete roundCollapsed[k])
   expandedSet.clear()
+  copiedRound.value = null
 }
 
 // 追问模式：当前任务已到终态，输入框变为追问输入
@@ -433,6 +585,72 @@ function eventTitle(ev) {
   return prefix + base
 }
 
+/** 合并行的事件来源角色（工具行取调用方，普通行取事件本身） */
+function eventAgent(item) {
+  const ev = item.kind === 'tool' ? item.call : item.ev
+  return ev.agent || 'main'
+}
+
+/** 工具结果的一行摘要（合并行展示，详情折叠） */
+function toolBrief(resultEv) {
+  const text = (resultEv.toolResult || '').replace(/\s+/g, ' ').trim()
+  if (!text) return ''
+  return text.length > 60 ? text.slice(0, 60) + '…' : text
+}
+
+/** 交付物图标按文件类型区分 */
+function deliverableIcon(type) {
+  if (type === 'image') return ImageIcon
+  if (type === 'pdf') return FileText
+  return File
+}
+
+// 报告复制反馈状态（轮次序号 → 已复制）
+const copiedRound = ref(null)
+
+/** 兜底复制：Clipboard API 不可用/被拒时用隐藏文本域 execCommand */
+function legacyCopy(text) {
+  const ta = document.createElement('textarea')
+  ta.value = text
+  ta.style.position = 'fixed'
+  ta.style.opacity = '0'
+  document.body.appendChild(ta)
+  ta.select()
+  let ok = false
+  try {
+    ok = document.execCommand('copy')
+  } catch (e) {
+    ok = false
+  }
+  document.body.removeChild(ta)
+  return ok
+}
+
+/** 复制报告 Markdown 原文到剪贴板 */
+async function copyReport(round, ri) {
+  const succeed = () => {
+    copiedRound.value = ri
+    showToast('报告已复制', 'success')
+    setTimeout(() => {
+      if (copiedRound.value === ri) copiedRound.value = null
+    }, 2000)
+  }
+  try {
+    if (navigator.clipboard && window.isSecureContext) {
+      await navigator.clipboard.writeText(round.report || '')
+    } else if (!legacyCopy(round.report || '')) {
+      throw new Error('copy failed')
+    }
+    succeed()
+  } catch (e) {
+    if (legacyCopy(round.report || '')) {
+      succeed()
+    } else {
+      showToast('复制失败，请手动选择复制', 'error')
+    }
+  }
+}
+
 function deliverableTypeLabel(type) {
   return { pdf: 'PDF', image: '图片', text: '文本', binary: '文件' }[type] || type
 }
@@ -485,6 +703,155 @@ async function loadHistory() {
     console.warn('加载任务列表失败:', e)
   } finally {
     historyLoading.value = false
+  }
+}
+
+// ===== 任务管理：重命名 / 删除 / 批量删除 =====
+const batchMode = ref(false)
+const selectedTaskIds = ref([])
+const menuTask = ref(null)
+const menuStyle = ref({ top: '0px', left: '0px' })
+const confirmDeleteTask = ref(null)
+const confirmBatchDelete = ref(false)
+const editTitleVisible = ref(false)
+const editTitleText = ref('')
+let editTitleTargetId = ''
+
+/** 任务是否处于可删除的终态（执行中/排队中须先停止，后端同样校验） */
+function isFinishedStatus(status) {
+  return ['COMPLETED', 'STOPPED', 'ERROR'].includes(status)
+}
+
+/** 历史项点击：批量模式下仅终态任务可勾选（执行中/排队中的任务后端禁删），普通模式打开详情 */
+function onItemClick(item) {
+  if (batchMode.value) {
+    if (isFinishedStatus(item.status)) {
+      toggleSelectTask(item.id)
+    }
+    return
+  }
+  openDetail(item.id)
+}
+
+/** 三点菜单：打开/关闭（菜单 Teleport 到 body，用视口坐标计算 fixed 位置；下方空间不足自动向上展开） */
+function toggleMenu(item, event) {
+  const opening = menuTask.value?.id !== item.id
+  menuTask.value = opening ? item : null
+  if (!opening) return
+  // 事件分发结束前先捕获定位锚点，nextTick 回调里 currentTarget 已可能为 null
+  const itemEl = event?.currentTarget?.closest?.('.history-item')
+  nextTick(() => {
+    const menuEl = document.querySelector('.history-menu-fixed')
+    const rect = itemEl?.getBoundingClientRect()
+    if (!rect || !menuEl) return
+    const menuHeight = menuEl.offsetHeight
+    const gap = 8
+    const spaceBelow = window.innerHeight - rect.bottom
+    const spaceAbove = rect.top
+    const up = spaceBelow - gap < menuHeight && spaceAbove - gap >= menuHeight
+    const top = up ? rect.top - gap - menuHeight : rect.bottom + gap
+    const left = Math.max(8, rect.right - gap - 160)
+    menuStyle.value = { top: top + 'px', left: left + 'px' }
+  })
+}
+
+/** 点击菜单外的空白处关闭三点菜单 */
+function handleMenuOutsideClick() {
+  menuTask.value = null
+}
+
+/** 三点菜单：进入批量管理模式 */
+function onBatchManage() {
+  menuTask.value = null
+  batchMode.value = true
+  selectedTaskIds.value = []
+}
+
+/** 三点菜单：打开修改标题弹窗（预填当前标题） */
+function onEditTitle(item) {
+  menuTask.value = null
+  editTitleTargetId = item.id
+  editTitleText.value = item.title || ''
+  editTitleVisible.value = true
+}
+
+function closeEditTitle() {
+  editTitleVisible.value = false
+}
+
+/** 确定修改标题：校验非空后调用接口，成功刷新列表 */
+async function confirmEditTitle() {
+  const title = editTitleText.value.trim()
+  if (!title) {
+    showToast('标题不能为空', 'error')
+    return
+  }
+  try {
+    await renameManusTask(editTitleTargetId, title)
+    editTitleVisible.value = false
+    loadHistory()
+    showToast('标题已更新', 'success')
+  } catch (e) {
+    showToast(e?.response?.data?.message || '标题更新失败，请重试', 'error')
+  }
+}
+
+/** 三点菜单：打开单体删除确认弹窗 */
+function openDeleteConfirm(item) {
+  menuTask.value = null
+  confirmDeleteTask.value = item
+}
+
+/** 批量模式：选中/取消选中任务 */
+function toggleSelectTask(taskId) {
+  const idx = selectedTaskIds.value.indexOf(taskId)
+  if (idx >= 0) {
+    selectedTaskIds.value.splice(idx, 1)
+  } else {
+    selectedTaskIds.value.push(taskId)
+  }
+}
+
+/** 批量模式：退出并清空选中 */
+function exitBatchMode() {
+  batchMode.value = false
+  selectedTaskIds.value = []
+  confirmBatchDelete.value = false
+}
+
+/** 删除任务：当前正在查看的任务被删时清空主区回新建态 */
+async function doDeleteTask(taskId) {
+  try {
+    await deleteManusTask(taskId)
+    confirmDeleteTask.value = null
+    if (active.value && active.value.id === taskId) {
+      startNewTask()
+    }
+    loadHistory()
+    showToast('任务已删除', 'success')
+  } catch (e) {
+    confirmDeleteTask.value = null
+    showToast(e?.response?.data?.message || '删除失败，请重试', 'error')
+  }
+}
+
+/** 批量删除确认后执行：调用接口，成功后刷新列表（当前任务被删则回新建态） */
+async function doBatchDelete() {
+  const ids = [...selectedTaskIds.value]
+  if (!ids.length) return
+  try {
+    const res = await batchDeleteManusTasks(ids)
+    confirmBatchDelete.value = false
+    exitBatchMode()
+    if (active.value && ids.includes(active.value.id)) {
+      startNewTask()
+    }
+    loadHistory()
+    showToast(res.data?.message || '批量删除成功', 'success')
+  } catch (e) {
+    // 失败仅关闭确认弹窗、保留勾选，用户可直接重试而不必重选
+    confirmBatchDelete.value = false
+    showToast(e?.response?.data?.message || '批量删除失败，请重试', 'error')
   }
 }
 
@@ -710,20 +1077,33 @@ function scheduleRevoke(url) {
 }
 
 function handleKeydown(e) {
-  if (e.key === 'Escape' && previewImage.value.show) {
+  if (e.key !== 'Escape') return
+  if (previewImage.value.show) {
     closePreview()
   }
+  // 弹窗 Escape 关闭（与修改标题弹窗的 @keyup.escape 一致）
+  if (confirmDeleteTask.value) confirmDeleteTask.value = null
+  if (confirmBatchDelete.value) confirmBatchDelete.value = false
+  if (editTitleVisible.value) editTitleVisible.value = false
+}
+
+/** Enter 键处理：忽略中文输入法选词回车（isComposing），防止选词时误创建任务 */
+function onEnterKey(e) {
+  if (e.isComposing || e.keyCode === 229) return
+  send()
 }
 
 onMounted(() => {
   loadHistory()
   document.addEventListener('keydown', handleKeydown)
+  document.addEventListener('click', handleMenuOutsideClick)
   mainRef.value?.addEventListener('click', handleMainClick)
 })
 
 onUnmounted(() => {
   abortController.value?.abort()
   document.removeEventListener('keydown', handleKeydown)
+  document.removeEventListener('click', handleMenuOutsideClick)
   mainRef.value?.removeEventListener('click', handleMainClick)
   // 回收预览 blob URL（陷阱 33）
   previewBlobUrls.value.forEach((url) => URL.revokeObjectURL(url))
@@ -773,20 +1153,28 @@ onUnmounted(() => {
   color: var(--text-primary, #1e293b);
 }
 .back {
-  display: inline-flex;
+  /* 与普通智能体页返回按钮同款（浅绿底圆角矩形） */
+  display: flex;
   align-items: center;
-  gap: 0.35rem;
-  min-height: 44px;
-  padding: 0 0.75rem;
-  border-radius: 999px;
-  font-size: 0.875rem;
-  color: var(--text-secondary, #475569);
+  justify-content: center;
+  gap: 4px;
+  background: rgba(16, 185, 129, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  color: #10b981;
+  height: 40px;
+  padding: 0 16px;
+  box-sizing: border-box;
+  border-radius: 12px;
+  cursor: pointer;
+  font-size: 0.85rem;
+  font-weight: 500;
   text-decoration: none;
-  transition: background 200ms ease, color 200ms ease;
+  transition: background 0.2s, color 0.2s, box-shadow 0.2s;
 }
 .back:hover {
-  background: rgba(16, 185, 129, 0.08);
-  color: var(--text-primary, #1e293b);
+  background: rgba(16, 185, 129, 0.15);
+  color: #059669;
+  box-shadow: 0 2px 8px rgba(16, 185, 129, 0.1);
 }
 .history-toggle {
   display: none;
@@ -840,29 +1228,35 @@ onUnmounted(() => {
   font-weight: 700;
 }
 .new-task-btn {
-  display: inline-flex;
+  /* 与普通智能体页新对话按钮同款（绿色渐变实心） */
+  display: flex;
   align-items: center;
-  gap: 0.3rem;
-  min-height: 36px;
-  padding: 0 0.7rem;
-  border: 1px solid rgba(16, 185, 129, 0.35);
-  border-radius: 999px;
-  background: rgba(16, 185, 129, 0.08);
-  color: #10b981;
-  font-size: 0.8rem;
-  font-weight: 600;
+  gap: 6px;
+  background: linear-gradient(135deg, #34d399, #059669);
+  color: #fff;
+  border: none;
+  padding: 7px 14px;
+  border-radius: 10px;
+  font-size: 0.9rem;
+  font-weight: 500;
   cursor: pointer;
-  transition: background 200ms ease, box-shadow 200ms ease;
+  transition: all 0.2s ease;
+  box-shadow: 0 4px 12px rgba(5, 150, 105, 0.3);
 }
 .new-task-btn:hover {
-  background: rgba(16, 185, 129, 0.16);
-  box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.1);
+  opacity: 0.95;
+  box-shadow: 0 6px 20px rgba(5, 150, 105, 0.4);
+  transform: translateY(-1px);
+}
+.new-task-btn:active {
+  transform: translateY(0);
+  box-shadow: 0 2px 8px rgba(5, 150, 105, 0.3);
 }
 .task-list {
   flex: 1;
   min-height: 0;
   overflow-y: auto;
-  padding: 0 0.6rem 1rem;
+  padding: 0 2px 1rem 0.6rem;
 }
 .task-list-empty {
   padding: 1.5rem 0.5rem;
@@ -871,15 +1265,11 @@ onUnmounted(() => {
   color: var(--text-tertiary, #94a3b8);
 }
 .history-item {
-  display: block;
-  width: 100%;
-  text-align: left;
-  padding: 0.6rem 0.75rem;
+  position: relative;
   margin-bottom: 0.4rem;
   border: 1px solid transparent;
   border-radius: 12px;
   background: transparent;
-  cursor: pointer;
   transition: background 200ms ease, border-color 200ms ease;
 }
 .history-item:hover {
@@ -889,6 +1279,11 @@ onUnmounted(() => {
   background: rgba(16, 185, 129, 0.12);
   border-color: rgba(16, 185, 129, 0.35);
 }
+.history-item-main {
+  cursor: pointer;
+  padding: 0.6rem 44px 0.6rem 0.75rem;
+  min-width: 0;
+}
 .history-item-title {
   display: block;
   font-size: 0.85rem;
@@ -897,7 +1292,6 @@ onUnmounted(() => {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  padding-right: 8px;
 }
 .history-item-meta {
   display: flex;
@@ -922,6 +1316,272 @@ onUnmounted(() => {
 .history-time {
   margin-left: auto;
   white-space: nowrap;
+}
+
+/* ===== 历史项三点按钮与悬浮菜单（对齐知识问答页交互） ===== */
+.history-more-wrap {
+  position: absolute;
+  right: 2px;
+  top: 50%;
+  transform: translateY(-50%);
+}
+.history-more-btn {
+  width: 36px;
+  height: 36px;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: #94a3b8;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 200ms ease, color 200ms ease;
+}
+.history-more-btn:hover {
+  background: rgba(16, 185, 129, 0.1);
+  color: #10b981;
+}
+/* 三点菜单（Teleport 到 body，fixed 定位——脱离任务列表滚动容器，不被任何元素裁剪/遮挡） */
+.history-menu-fixed {
+  position: fixed;
+  width: 160px;
+  background: rgba(255, 255, 255, 0.97);
+  border-radius: 12px;
+  border: 1px solid rgba(16, 185, 129, 0.1);
+  box-shadow: 0 12px 32px rgba(15, 23, 42, 0.18);
+  z-index: 3000;
+  overflow: hidden;
+  animation: menuFadeIn 0.15s ease;
+}
+@keyframes menuFadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+.history-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 12px 14px;
+  border: none;
+  background: none;
+  font-size: 0.9rem;
+  color: #1e293b;
+  cursor: pointer;
+  transition: background 150ms ease;
+  text-align: left;
+}
+.history-menu-item:hover {
+  background: #f8fafc;
+}
+.history-menu-item.danger {
+  color: #ef4444;
+}
+.history-menu-item.danger:hover {
+  background: rgba(239, 68, 68, 0.06);
+}
+.history-menu-item.danger:disabled {
+  color: #fca5a5;
+  cursor: not-allowed;
+}
+.history-menu-item.danger:disabled:hover {
+  background: none;
+}
+.menu-icon {
+  width: 18px;
+  height: 18px;
+  flex-shrink: 0;
+}
+
+/* ===== 批量管理模式：勾选圆圈与底部按钮条 ===== */
+.history-item.batch-mode {
+  cursor: pointer;
+}
+.batch-check-wrap {
+  position: absolute;
+  right: 6px;
+  top: 0;
+  bottom: 0;
+  width: 44px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+.batch-check-wrap.disabled {
+  cursor: not-allowed;
+}
+.batch-circle {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  border: 2px solid #cbd5e1;
+  background: transparent;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 150ms ease;
+  box-sizing: border-box;
+}
+.batch-circle.selected {
+  background: #10b981;
+  border-color: #10b981;
+}
+.batch-circle.disabled {
+  border-color: #e2e8f0;
+  cursor: not-allowed;
+}
+.batch-circle .icon {
+  width: 14px;
+  height: 14px;
+  color: #ffffff;
+}
+.batch-bar {
+  flex-shrink: 0;
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px;
+  background: rgba(245, 247, 250, 0.75);
+  border-top: 1px solid rgba(16, 185, 129, 0.08);
+}
+.batch-bar-btn {
+  flex: 1;
+  height: 44px;
+  border-radius: 12px;
+  border: none;
+  background: #f8fafc;
+  color: #1e293b;
+  font-size: 1rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 200ms ease;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.06);
+}
+.batch-bar-btn:hover {
+  background: #f1f5f9;
+}
+.batch-bar-btn.delete {
+  color: #ef4444;
+}
+.batch-bar-btn.delete:hover:not(:disabled) {
+  background: rgba(239, 68, 68, 0.08);
+}
+.batch-bar-btn.delete:disabled {
+  color: #d1d5db;
+  cursor: not-allowed;
+  background: #f8fafc;
+}
+
+/* ===== 弹窗（删除确认 / 修改标题 / 批量删除确认，玻璃拟态） ===== */
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(16, 185, 129, 0.08);
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  animation: menuFadeIn 0.2s ease;
+}
+.modal-content {
+  width: 340px;
+  max-width: calc(100vw - 2rem);
+  padding: 2rem;
+  border-radius: 20px;
+  background: rgba(255, 255, 255, 0.9);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  box-shadow: 0 16px 48px rgba(16, 185, 129, 0.12);
+  text-align: center;
+  animation: modalSlideUp 0.25s ease;
+}
+@keyframes modalSlideUp {
+  from { transform: translateY(20px); opacity: 0; }
+  to { transform: translateY(0); opacity: 1; }
+}
+.modal-title {
+  font-size: 1.1rem;
+  font-weight: 600;
+  color: #1e1b4b;
+  margin-bottom: 0.5rem;
+}
+.modal-desc {
+  font-size: 0.9rem;
+  color: #64748b;
+  margin-bottom: 1.5rem;
+  line-height: 1.5;
+  word-break: break-word;
+}
+.modal-actions {
+  display: flex;
+  gap: 0.75rem;
+}
+.modal-btn {
+  flex: 1;
+  padding: 0.6rem;
+  border-radius: 10px;
+  border: none;
+  font-size: 0.9rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 200ms ease;
+}
+.modal-btn.cancel {
+  background: #f1f5f9;
+  color: #64748b;
+}
+.modal-btn.cancel:hover {
+  background: #e2e8f0;
+  color: #1e293b;
+}
+.modal-btn.confirm {
+  background: #ef4444;
+  color: #fff;
+  box-shadow: 0 4px 12px rgba(239, 68, 68, 0.3);
+}
+.modal-btn.confirm:hover {
+  background: #dc2626;
+  box-shadow: 0 6px 20px rgba(239, 68, 68, 0.4);
+  transform: translateY(-1px);
+}
+/* 标题/正文左对齐（修改标题、批量删除确认弹窗使用） */
+.modal-title.left,
+.modal-desc.left {
+  text-align: left;
+}
+/* 修改标题弹窗的确定按钮：绿色主色 */
+.modal-btn.confirm.green {
+  background: linear-gradient(135deg, #34d399, #059669);
+  box-shadow: 0 4px 12px rgba(5, 150, 105, 0.3);
+}
+.modal-btn.confirm.green:hover {
+  background: linear-gradient(135deg, #10b981, #047857);
+  box-shadow: 0 6px 20px rgba(5, 150, 105, 0.4);
+  transform: translateY(-1px);
+}
+/* 修改标题弹窗输入框 */
+.edit-title-input {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 10px 12px;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  font-size: 1rem;
+  background: #f8fafc;
+  color: #1e1b4b;
+  outline: none;
+  margin-bottom: 1.25rem;
+  transition: border-color 200ms ease, box-shadow 200ms ease;
+}
+.edit-title-input:focus {
+  border-color: #10b981;
+  box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.12);
 }
 
 /* ===== 空状态 ===== */
@@ -1098,28 +1758,6 @@ onUnmounted(() => {
   0%, 100% { opacity: 1; transform: scale(1); }
   50% { opacity: 0.4; transform: scale(0.8); }
 }
-.stop-btn {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.35rem;
-  min-height: 32px;
-  padding: 0 0.8rem;
-  border: 1px solid rgba(239, 68, 68, 0.4);
-  border-radius: 999px;
-  background: rgba(239, 68, 68, 0.06);
-  color: #dc2626;
-  font-size: 0.78rem;
-  font-weight: 600;
-  cursor: pointer;
-  transition: background 200ms ease;
-}
-.stop-btn:hover {
-  background: rgba(239, 68, 68, 0.14);
-}
-.stopping-hint {
-  font-size: 0.75rem;
-  color: var(--text-tertiary, #94a3b8);
-}
 .task-text {
   margin: 0;
   font-size: 0.95rem;
@@ -1198,14 +1836,12 @@ onUnmounted(() => {
   to { transform: rotate(360deg); }
 }
 
-/* 时间线 */
+/* 时间线（扁平轻量：减淡底色与边框，弱化"彩色卡片"感） */
 .event-card {
-  margin-bottom: 0.6rem;
-  border-radius: 14px;
-  background: rgba(255, 255, 255, 0.65);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
-  border: 1px solid rgba(255, 255, 255, 0.5);
+  margin-bottom: 0.5rem;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.45);
+  border: 1px solid rgba(226, 232, 240, 0.7);
   overflow: hidden;
   transition: border-color 200ms ease;
 }
@@ -1216,13 +1852,12 @@ onUnmounted(() => {
   border-color: rgba(239, 68, 68, 0.35);
   background: rgba(239, 68, 68, 0.04);
 }
-/* 子智能体事件：紫色左边框区分来源 */
+/* 子智能体事件：中性左边框 + 角色名文字标签区分来源（不再用彩色） */
 .event-card.sub-agent {
-  border-left: 3px solid #8b5cf6;
-  background: rgba(139, 92, 246, 0.04);
+  border-left: 3px solid #94a3b8;
 }
 .event-card.final {
-  border-color: rgba(16, 185, 129, 0.35);
+  border-color: rgba(16, 185, 129, 0.3);
 }
 .event-head {
   display: flex;
@@ -1230,6 +1865,7 @@ onUnmounted(() => {
   gap: 0.5rem;
   padding: 0.55rem 0.85rem;
 }
+.event-card.tool .event-head,
 .event-card.tool_result .event-head {
   cursor: pointer;
 }
@@ -1238,9 +1874,10 @@ onUnmounted(() => {
   color: var(--text-tertiary, #94a3b8);
   flex-shrink: 0;
 }
-.event-card.think .event-icon { color: #10b981; }
-.event-card.tool_call .event-icon { color: #8b5cf6; }
-.event-card.tool_result .event-icon { color: #8b5cf6; }
+.event-card.think .event-icon { color: #64748b; }
+.event-card.tool .event-icon,
+.event-card.tool_call .event-icon,
+.event-card.tool_result .event-icon { color: #64748b; }
 .event-card.error .event-icon { color: #ef4444; }
 .event-title {
   flex: 1;
@@ -1248,6 +1885,16 @@ onUnmounted(() => {
   font-size: 0.82rem;
   font-weight: 700;
   color: var(--text-primary, #1e293b);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+/* 工具合并行内的一行结果摘要 */
+.tool-brief {
+  margin-left: 0.5rem;
+  font-weight: 400;
+  font-size: 0.78rem;
+  color: var(--text-tertiary, #94a3b8);
 }
 .event-time {
   flex-shrink: 0;
@@ -1315,8 +1962,8 @@ onUnmounted(() => {
   font-size: 0.7rem;
   padding: 0.1rem 0.5rem;
   border-radius: 999px;
-  background: rgba(139, 92, 246, 0.12);
-  color: #7c3aed;
+  background: rgba(100, 116, 139, 0.1);
+  color: #475569;
   flex-shrink: 0;
 }
 .deliverable-size {
@@ -1362,23 +2009,49 @@ onUnmounted(() => {
   border-bottom: none;
 }
 .deliverables-panel .icon {
-  color: #8b5cf6;
+  color: #10b981;
   flex-shrink: 0;
 }
 
-/* 报告 */
+/* 报告（玻璃拟态减淡：更透的底、更轻的描边） */
 .report-panel {
   padding: 0.9rem 1rem;
   border-radius: 16px;
-  background: rgba(255, 255, 255, 0.75);
+  background: rgba(255, 255, 255, 0.6);
   backdrop-filter: blur(16px);
   -webkit-backdrop-filter: blur(16px);
-  border: 1px solid rgba(16, 185, 129, 0.25);
+  border: 1px solid rgba(16, 185, 129, 0.16);
   box-shadow: var(--shadow-sm, 0 1px 3px rgba(15, 23, 42, 0.06));
 }
 .report-body {
   font-size: 0.9rem;
   line-height: 1.7;
+}
+/* 报告头部复制按钮（标题右侧轻量文字钮） */
+.copy-report-btn {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  min-width: 44px;
+  min-height: 44px;
+  justify-content: center;
+  padding: 0 0.6rem;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text-tertiary, #94a3b8);
+  font-size: 0.75rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 200ms ease, color 200ms ease;
+}
+.copy-report-btn:hover {
+  background: rgba(16, 185, 129, 0.08);
+  color: #059669;
+}
+.copy-report-btn .icon.copied {
+  color: #10b981;
 }
 
 /* 错误横幅（悬浮于主区底部） */
@@ -1427,13 +2100,14 @@ onUnmounted(() => {
   outline-offset: 2px;
 }
 
-/* ===== 输入区 ===== */
+/* ===== 输入区（按钮与文本域垂直居中） ===== */
 .input-area {
   flex-shrink: 0;
   display: flex;
-  align-items: flex-end;
+  align-items: center;
   gap: 0.75rem;
-  padding: 0.9rem 1.25rem calc(0.9rem + env(safe-area-inset-bottom));
+  /* 容器留白与普通智能体一致（0.8rem 1rem） */
+  padding: 0.8rem 1rem calc(0.8rem + env(safe-area-inset-bottom));
   background: rgba(255, 255, 255, 0.6);
   backdrop-filter: blur(16px);
   -webkit-backdrop-filter: blur(16px);
@@ -1442,15 +2116,17 @@ onUnmounted(() => {
 .input-area textarea {
   flex: 1;
   min-width: 0;
-  max-height: 30vh;
-  padding: 0.7rem 1rem;
+  min-height: 56px;
+  max-height: 56px;
+  padding: 0 1rem;
   border: 1px solid var(--border-light, #e2e8f0);
   border-radius: 14px;
   background: rgba(255, 255, 255, 0.85);
   color: var(--text-primary, #1e293b);
-  font-size: 16px;
+  font-size: 0.9rem;
   font-family: inherit;
-  line-height: 1.5;
+  /* 56px 高含 2px 边框，行高 54px 让文字垂直居中且不溢出出现滚动条 */
+  line-height: 54px;
   resize: none;
   outline: none;
   transition: border-color 200ms ease, box-shadow 200ms ease;
@@ -1475,6 +2151,13 @@ onUnmounted(() => {
   font-weight: 700;
   cursor: pointer;
   transition: opacity 200ms ease, box-shadow 200ms ease;
+}
+/* 运行/排队期间：发送按钮变红色「停止」（对齐知识问答页"发送变终止"惯例） */
+.send-btn.stop {
+  background: linear-gradient(135deg, #ef4444, #f87171);
+}
+.send-btn.stop:hover:not(:disabled) {
+  background: linear-gradient(135deg, #dc2626, #ef4444);
 }
 .send-btn:hover:not(:disabled) {
   box-shadow: 0 4px 14px rgba(16, 185, 129, 0.35);
@@ -1533,7 +2216,7 @@ onUnmounted(() => {
 .new-task-btn:focus-visible,
 .history-item:focus-visible,
 .suggest-chip:focus-visible,
-.stop-btn:focus-visible,
+
 .send-btn:focus-visible,
 .image-preview-close:focus-visible {
   outline: 2px solid #10b981;

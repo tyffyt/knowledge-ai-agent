@@ -55,7 +55,7 @@ public class RegisterDeliverableTool {
     @Tool(description = """
             Register a file generated during this task (PDF, downloaded resource, written file) as a deliverable. \
             Call this tool IMMEDIATELY after a file is successfully created or downloaded, so the user can preview and download it. \
-            filePath is the file's absolute or tmp-relative path returned by the tool that produced it. \
+            filePath is the file's absolute path, tmp-relative path, or the download URL returned by the tool that produced it. \
             description briefly explains what the file contains.""")
     public String register(String fileName, String filePath, String description) {
         if (StrUtil.isBlank(fileName) || StrUtil.isBlank(filePath)) {
@@ -90,9 +90,11 @@ public class RegisterDeliverableTool {
     /**
      * 解析待登记文件路径（不放宽白名单边界）
      * 绝对路径直接使用；相对路径先按白名单根目录解析，未命中时依次在已知产出子目录
-     * （pdf / download / file）下精确匹配同名文件——产出工具通常只向模型返回文件名
+     * （pdf / download / file）下精确匹配同名文件——产出工具通常只向模型返回文件名；
+     * 仍未命中时按文件名（取路径最后一段，兼容模型拼贴的 /api/files/pdf/x.pdf 下载 URL）
+     * 在根目录与各产出子目录下兜底精确匹配
      *
-     * @param filePath 模型提供的路径或文件名
+     * @param filePath 模型提供的路径、文件名或下载 URL
      * @return 命中的文件路径；未命中返回根目录解析结果（由调用方做存在性判断）
      */
     private Path resolveWithinWhitelist(String filePath) {
@@ -108,6 +110,20 @@ public class RegisterDeliverableTool {
             Path candidate = Paths.get(WHITELIST_ROOT, sub, filePath).normalize();
             if (Files.isRegularFile(candidate)) {
                 return candidate;
+            }
+        }
+        // 按文件名兜底：模型可能直接拼贴生成工具返回的下载 URL（如 /api/files/pdf/x.pdf）
+        String base = p.getFileName() == null ? "" : p.getFileName().toString();
+        if (StrUtil.isNotBlank(base)) {
+            Path rootCandidate = Paths.get(WHITELIST_ROOT, base).normalize();
+            if (Files.isRegularFile(rootCandidate)) {
+                return rootCandidate;
+            }
+            for (String sub : List.of("pdf", "download", "file")) {
+                Path candidate = Paths.get(WHITELIST_ROOT, sub, base).normalize();
+                if (Files.isRegularFile(candidate)) {
+                    return candidate;
+                }
             }
         }
         return direct;

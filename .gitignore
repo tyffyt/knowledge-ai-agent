@@ -1,47 +1,49 @@
-# === Java / Maven ===  
-target/  
-*.class  
-*.jar  
-*.war  
-*.log  
-  
-# === Node.js ===  
-node_modules/  
-frontend/node_modules/  
-frontend/package-lock.json  
-  
-# === IDE ===  
-.idea/  
-*.iml  
-.vscode/  
-  
-# === OS ===  
-.DS_Store  
-Thumbs.db  
-  
-# === Project specific ===  
-chat_memory/  
-.mongo-data/  
+# === Java / Maven ===
+target/
+*.class
+*.jar
+*.war
+*.log
+
+# === Node.js ===
+node_modules/
+frontend/node_modules/
+frontend/package-lock.json
+
+# === IDE ===
+.idea/
+*.iml
+.vscode/
+
+# === OS ===
+.DS_Store
+Thumbs.db
+
+# === Project specific ===
+chat_memory/
+.mongo-data/
 tmp/
 /src/main/resources/document/
-  
-# === ZCode ===  
-.zcode/  
+docs/plans
+
+# === ZCode ===
+.zcode/
 .agents/
+.mimosa/
 # === Config with secrets ===
 src/main/resources/application.yml
-src/main/resources/application-local.yml  
-src/main/resources/application-prod.yml  
-  
-# === Build artifacts ===  
-build.log  
+src/main/resources/application-local.yml
+src/main/resources/application-prod.yml
+
+# === Build artifacts ===
+build.log
 compile.log
 start-backend.bat
-start-mongodb.js  
-start-dev.bat  
-images-search-mcp-server/ 
-.claude/  
-mvn_compile_output*.txt  
+start-mongodb.js
+start-dev.bat
+images-search-mcp-server/
+.claude/
+mvn_compile_output*.txt
 nul
 /frontend/dist/
 /deploy/
@@ -58,3 +60,6 @@ android/local.properties
 android/.kotlin/
 *.jks
 *.keystore
+/.mimosa/
+/.zcodeignore
+/docs/plans/

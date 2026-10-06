@@ -900,6 +900,8 @@ function scrollToBottom() {
  * 纯 Enter 发送消息；Ctrl/Cmd + Enter 在光标处插入换行
  */
 function onInputEnter(event) {
+  // 中文输入法选词回车（isComposing）不发送，防止误发消息
+  if (event.isComposing || event.keyCode === 229) return
   if (event.ctrlKey || event.metaKey) {
     insertNewline(event)
   } else {
@@ -1380,8 +1382,8 @@ function sttErrorMessage(err) {
   flex-grow: 1;
   overflow-y: scroll;
   overflow-x: hidden;
-  /* 滚动条吸附在历史对话最右侧边框；收起按钮在右缘外侧，互不重叠 */
-  padding: 10px 10px 10px 0;
+  /* 滚动条吸附在历史对话最右侧边框；收起按钮在右缘外侧，互不重叠；右内边距收窄让三点按钮贴近滚动条 */
+  padding: 10px 2px 10px 0;
   display: flex;
   flex-direction: column;
   gap: 6px;
@@ -1436,7 +1438,7 @@ function sttErrorMessage(err) {
 /* 历史项三点按钮与悬浮菜单 */
 .history-more-wrap {
   position: absolute;
-  right: 8px;
+  right: 2px;
   top: 6px;
 }
 .history-more-btn {
@@ -2122,158 +2124,6 @@ function sttErrorMessage(err) {
 }
 @keyframes mic-rotate {
   to { transform: rotate(360deg); }
-}
-/* Enhanced Markdown styles for light theme */
-.markdown-body :deep(p) {
-  margin-bottom: 0.9em;
-  line-height: 1.8;
-}
-.markdown-body :deep(p:last-child) {
-  margin-bottom: 0;
-}
-.markdown-body :deep(ol) {
-  margin-bottom: 0.8em;
-  padding-left: 1.8em;
-  list-style: none;
-  counter-reset: li-counter;
-}
-.markdown-body :deep(ol > li) {
-  counter-increment: li-counter;
-  position: relative;
-  padding-left: 0.5em;
-  margin-bottom: 0.6em;
-  line-height: 1.7;
-}
-.markdown-body :deep(ol > li::before) {
-	  content: counter(li-counter) ".";
-	  position: absolute;
-	  left: -1.8em;
-	  width: 1.5em;
-	  text-align: right;
-	  color: #10B981;
-	  font-weight: 600;
-	}
-.markdown-body :deep(ul) {
-  margin-bottom: 0.8em;
-  padding-left: 1.5em;
-}
-.markdown-body :deep(li) {
-  margin-bottom: 0.5em;
-  line-height: 1.7;
-}
-.markdown-body :deep(ul > li) {
-  list-style: none;
-  position: relative;
-  padding-left: 0.5em;
-}
-.markdown-body :deep(ul > li::before) {
-	  content: '';
-	  position: absolute;
-	  left: -1.2em;
-	  top: 0.65em;
-	  width: 6px;
-	  height: 6px;
-	  border-radius: 50%;
-	  background: #6EE7B7;
-	}
-.markdown-body :deep(ul ul), .markdown-body :deep(ol ul),
-.markdown-body :deep(ul ol), .markdown-body :deep(ol ol) {
-  margin-top: 0.4em;
-  margin-bottom: 0.4em;
-}
-.markdown-body :deep(h1), .markdown-body :deep(h2), .markdown-body :deep(h3),
-.markdown-body :deep(h4), .markdown-body :deep(h5), .markdown-body :deep(h6) {
-  margin-top: 1.4em;
-  margin-bottom: 0.6em;
-  font-weight: 600;
-  line-height: 1.4;
-  color: #0f172a;
-}
-.markdown-body :deep(h3) {
-	  padding-left: 12px;
-	  border-left: 3px solid #10B981;
-	}
-	.markdown-body :deep(h4) {
-	  color: #059669;
-	  font-size: 1em;
-	}
-.markdown-body :deep(h1:first-child), .markdown-body :deep(h2:first-child),
-.markdown-body :deep(h3:first-child) {
-  margin-top: 0;
-}
-.markdown-body :deep(strong) {
-  color: #0f172a;
-  font-weight: 600;
-}
-.markdown-body :deep(blockquote) {
-	  margin: 1em 0;
-	  padding: 0.8em 1.2em;
-	  border-left: 3px solid #6EE7B7;
-	  background: rgba(16,185,129,0.04);
-	  border-radius: 0 8px 8px 0;
-	  color: #475569;
-	  line-height: 1.7;
-	}
-.markdown-body :deep(blockquote p) {
-  margin-bottom: 0.4em;
-}
-.markdown-body :deep(blockquote p:last-child) {
-  margin-bottom: 0;
-}
-.markdown-body :deep(hr) {
-	  margin: 1.2em 0;
-	  border: none;
-	  height: 1px;
-	  background: linear-gradient(90deg, transparent, #A7F3D0, transparent);
-	}
-.markdown-body :deep(code) {
-	  background: #f1f5f9;
-	  padding: 0.2em 0.4em;
-	  border-radius: 4px;
-	  font-family: 'Cascadia Code', 'Fira Code', monospace;
-	  font-size: 0.9em;
-	  color: #10B981;
-	}
-.markdown-body :deep(pre) {
-  background: #f8fafc;
-  border: 1px solid #e2e8f0;
-  padding: 1em;
-  border-radius: 10px;
-  overflow-x: auto;
-  margin-bottom: 0.8em;
-}
-.markdown-body :deep(pre code) {
-  background: none;
-  padding: 0;
-  color: #1e293b;
-}
-.markdown-body :deep(a) {
-	  color: #10B981;
-	  text-decoration: underline;
-	}
-/* Markdown 表格：超出宽度时气泡内横向滚动，不撑破布局 */
-.markdown-body :deep(table) {
-  display: block;
-  width: 100%;
-  max-width: 100%;
-  overflow-x: auto;
-  border-collapse: collapse;
-  margin-bottom: 0.8em;
-  font-size: 0.9em;
-  line-height: 1.5;
-}
-.markdown-body :deep(th),
-.markdown-body :deep(td) {
-  border: 1px solid #e2e8f0;
-  padding: 0.4em 0.6em;
-  text-align: left;
-  white-space: normal;
-  word-break: break-word;
-}
-.markdown-body :deep(th) {
-  background: rgba(16, 185, 129, 0.06);
-  font-weight: 600;
-  color: #065F46;
 }
 .input-area {
   flex-shrink: 0;

@@ -1901,51 +1901,6 @@ onUnmounted(() => {
   border-radius: 3px;
 }
 
-.markdown-body {
-  font-size: 0.88rem;
-  line-height: 1.7;
-  color: #1e293b;
-  word-break: break-word;
-}
-
-.markdown-body :deep(h1),
-.markdown-body :deep(h2),
-.markdown-body :deep(h3) {
-  color: #065f46;
-  margin: 14px 0 8px;
-  font-size: 1rem;
-}
-
-.markdown-body :deep(p) {
-  margin-bottom: 10px;
-}
-
-.markdown-body :deep(pre) {
-  background: #f1f5f9;
-  padding: 10px;
-  border-radius: 8px;
-  overflow-x: auto;
-  font-size: 0.82rem;
-}
-
-.markdown-body :deep(code) {
-  background: #f1f5f9;
-  padding: 1px 4px;
-  border-radius: 4px;
-  font-size: 0.82rem;
-}
-
-.markdown-body :deep(img) {
-  max-width: 100%;
-  border-radius: 8px;
-}
-
-.markdown-body :deep(hr) {
-  border: none;
-  border-top: 1px dashed rgba(16, 185, 129, 0.3);
-  margin: 12px 0;
-}
-
 .chunk-list {
   display: flex;
   flex-direction: column;
