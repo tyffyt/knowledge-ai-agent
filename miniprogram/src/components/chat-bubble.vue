@@ -1,5 +1,5 @@
 <template>
-	<view class="bubble-row" :class="isUser ? 'row-user' : 'row-ai'">
+	<view class="bubble-row" :class="[isUser ? 'row-user' : 'row-ai', { 'row-full': fullWidth }]">
 		<!-- AI 头像（hideAvatar 时隐藏，如超级智能体报告区） -->
 		<view v-if="!isUser && !hideAvatar" class="avatar avatar-ai">知</view>
 
@@ -75,7 +75,9 @@ const props = defineProps({
 	// 隐藏左侧 AI 头像（超级智能体报告区使用）
 	hideAvatar: { type: Boolean, default: false },
 	// 紧凑排版：收敛标题字号与间距（长 Markdown 报告使用，避免默认 h1 过大显乱）
-	compact: { type: Boolean, default: false }
+	compact: { type: Boolean, default: false },
+	// 全宽模式：内容铺满整行、去掉气泡底与内边距（由外层卡片提供外观，用于任务报告）
+	fullWidth: { type: Boolean, default: false }
 })
 
 const isUser = computed(() => props.msg.role === 'user')
@@ -297,6 +299,22 @@ function onToggleSpeech() {
 .bubble-wrap {
 	max-width: 78%;
 	min-width: 0;
+}
+
+/* 全宽模式（任务报告）：铺满整行、无气泡底与内边距，外观由外层卡片负责 */
+.bubble-row.row-full {
+	padding: 0;
+}
+
+.bubble-row.row-full .bubble-wrap {
+	max-width: 100%;
+	width: 100%;
+}
+
+.bubble-row.row-full .bubble {
+	padding: 0;
+	border-radius: 0;
+	background: transparent;
 }
 
 .bubble {

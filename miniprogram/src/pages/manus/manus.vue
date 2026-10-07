@@ -25,7 +25,7 @@
 						class="process-toggle"
 						@tap="toggleRound(ri)"
 					>
-						<image class="process-icon" :class="{ spinning: isRoundRunning(ri) }" src="/static/icons/list-checks.svg" mode="aspectFit" />
+						<image class="process-icon" :class="{ 'icon-pulse': isRoundRunning(ri) }" src="/static/icons/brain.svg" mode="aspectFit" />
 						<text class="process-title">{{ roundTitle(ri) }}</text>
 						<view v-if="roundThinking(ri)" class="thinking-dots">
 							<view class="dot"></view>
@@ -57,7 +57,7 @@
 						<!-- 事件列表（工具调用与结果合并一行，点按展开详情） -->
 						<view v-for="(item, i) in round.items" :key="i" class="event-card" :class="{ thinking: item.kind === 'single' && item.ev.type === 'think' }">
 							<view class="event-head" @tap="onEventHeadTap(item, ri, i)">
-								<view class="event-dot" :class="item.kind === 'tool' ? (item.result ? 'dot-done' : 'dot-running') : 'dot-think'"></view>
+								<image class="event-icon" :class="{ spinning: item.kind === 'tool' && !item.result }" :src="eventIcon(item)" mode="aspectFit" />
 								<view class="event-main">
 									<view class="event-title-row">
 										<text class="event-title">{{ item.kind === 'tool' ? eventTitle(item.call) : eventTitle(item.ev) }}</text>
@@ -81,14 +81,23 @@
 						</view>
 					</view>
 
-					<!-- 任务报告（复用消息气泡：marked+mp-html 渲染、图片代理、TTS 播报） -->
-					<chat-bubble
-					v-if="round.report"
-					:key="'report-' + ri + '-' + round.report.length"
-					:msg="reportBubble(round)"
-					:hide-avatar="true"
-					:compact="true"
-				/>
+					<!-- 任务报告（卡片铺满：与安卓/Web 报告面板一致；内容仍由消息气泡组件渲染 Markdown 与图片） -->
+					<view v-if="round.report" class="report-panel">
+						<view class="panel-head">
+							<image class="panel-icon" src="/static/icons/file-text.svg" mode="aspectFit" />
+							<text class="panel-title">任务报告</text>
+							<view class="report-copy" @tap="copyReport(round)">
+								<text class="report-copy-text">{{ copiedRound === ri ? '已复制' : '复制' }}</text>
+							</view>
+						</view>
+						<chat-bubble
+							:key="'report-' + ri + '-' + round.report.length"
+							:msg="reportBubble(round)"
+							:hide-avatar="true"
+							:compact="true"
+							:full-width="true"
+						/>
+					</view>
 
 					<!-- 交付物行（下载后打开；图片可预览） -->
 					<view v-for="d in round.deliverables" :key="d.index" class="deliverable" @tap="openDeliverable(d)">
@@ -342,6 +351,36 @@ function eventTitle(ev) {
 		}
 	})()
 	return prefix + base
+}
+
+/** 事件行图标：与 Web 端事件图标一一对应（think→大脑、工具→扳手、计划→清单、异常→警告） */
+function eventIcon(item) {
+	const type = item.kind === 'tool' ? 'tool' : item.ev.type
+	const icons = {
+		think: '/static/icons/brain.svg',
+		tool: '/static/icons/wrench.svg',
+		'plan_updated': '/static/icons/list-checks.svg',
+		error: '/static/icons/alert-circle.svg'
+	}
+	return icons[type] || '/static/icons/file-text.svg'
+}
+
+// 报告复制反馈状态（轮次序号 → 已复制）
+const copiedRound = ref(null)
+
+/** 复制任务报告原文 */
+function copyReport(round) {
+	uni.setClipboardData({
+		data: round.report || '',
+		success: () => {
+			copiedRound.value = round
+			uni.showToast({ title: '报告已复制', icon: 'none' })
+			setTimeout(() => {
+				if (copiedRound.value === round) copiedRound.value = null
+			}, 2000)
+		},
+		fail: () => uni.showToast({ title: '复制失败，请长按选择复制', icon: 'none' })
+	})
 }
 
 /** 工具结果/思考内容的一行摘要 */
@@ -782,8 +821,13 @@ function deleteTask(item) {
 	height: 30rpx;
 }
 
-.process-icon.spinning {
-	animation: spin 1.2s linear infinite;
+.process-icon.icon-pulse {
+	animation: icon-pulse 1.6s ease-in-out infinite;
+}
+
+@keyframes icon-pulse {
+	0%, 100% { opacity: 1; transform: scale(1); }
+	50% { opacity: 0.55; transform: scale(0.92); }
 }
 
 .process-title {
@@ -944,16 +988,16 @@ function deleteTask(item) {
 	padding: 16rpx 20rpx;
 }
 
-.event-dot {
-	width: 14rpx;
-	height: 14rpx;
-	border-radius: 50%;
+.event-icon {
+	width: 30rpx;
+	height: 30rpx;
 	flex-shrink: 0;
+	margin-top: 2rpx;
 }
 
-.dot-think { background: #94A3B8; }
-.dot-done { background: #10B981; }
-.dot-running { background: #F59E0B; }
+.event-icon.spinning {
+	animation: spin 1.2s linear infinite;
+}
 
 .event-main {
 	flex: 1;
@@ -1010,6 +1054,35 @@ function deleteTask(item) {
 	word-break: break-all;
 	margin-bottom: 10rpx;
 	white-space: pre-wrap;
+}
+
+/* 任务报告卡片（铺满，与安卓/Web 报告面板一致） */
+.report-panel {
+	padding: 20rpx 24rpx;
+	border-radius: 20rpx;
+	background: rgba(255, 255, 255, 0.82);
+	border: 1rpx solid rgba(16, 185, 129, 0.18);
+	margin-top: 12rpx;
+}
+
+.report-panel .panel-head {
+	margin-bottom: 8rpx;
+}
+
+.report-copy {
+	margin-left: auto;
+	padding: 8rpx 16rpx;
+	border-radius: 999rpx;
+}
+
+.report-copy:active {
+	background: rgba(16, 185, 129, 0.08);
+}
+
+.report-copy-text {
+	font-size: 22rpx;
+	font-weight: 600;
+	color: #94A3B8;
 }
 
 /* 交付物行 */
