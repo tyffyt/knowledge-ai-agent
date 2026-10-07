@@ -34,14 +34,14 @@
 | 应用中心首页 | 应用入口卡片（个人知识助手 / AI 超级智能体）、用户信息卡片（服务器设置 / 退出登录） | 启动页，未登录自动跳登录页 |
 | 登录页 | 登录 / 注册（图形验证码）/ 服务器地址设置 | 预填 admin/admin；注册成功自动登录 |
 | 知识聊天页 | 流式聊天（RAG 开关）、**大模型切换**（底部弹层，切换后上下文连续）、RAG 引用折叠展示、历史会话弹层（切换/改标题/删除/批量删除）、语音输入（STT）、语音播报（TTS，仅图标）、图片预览、PDF 下载打开、新建对话 | 对齐 Web 端 KnowledgeChat 交互 |
-| Manus 页 | 纯流式聊天（SSE 帧解析）、图片预览、PDF 下载 | 对齐 Web 端 ManusChat |
+| Manus 页 | **任务制轮次对话**：创建任务 / 执行过程实时渲染（计划进度四态 + 事件列表，图标与 Web 一致）/ 任务报告卡片（铺满、可复制）/ 交付物下载打开（图片预览）/ 多轮追问 / 停止任务 / 任务记录弹层（新建任务、改标题、删除） | 对齐 Web 端 ManusChat 的任务制交互（任务数据按登录用户隔离） |
 
 ## 四、架构（松耦合分层）
 
 ```
 src/
 ├── pages/        # 页面层：只做 UI 与交互编排
-├── components/   # 组件层：chat-bubble / history-panel / confirm-dialog / server-config / model-picker（模型选择底部弹层）
+├── components/   # 组件层：chat-bubble（消息与任务报告，支持隐藏头像/紧凑排版/全宽模式）/ history-panel / confirm-dialog / server-config / model-picker（模型选择底部弹层）
 └── utils/        # 逻辑层：config（常量）/ request（请求+流式）/ api（接口集中）/ auth / chat（会话+引用解析）/ markdown（预处理）/ tts / stt / model（模型清单缓存+当前选择，与 Web 端同构）
 ```
 
@@ -50,7 +50,7 @@ src/
 
 ## 五、技术要点与踩坑记录
 
-1. **流式聊天**：后端 knowledge 两个接口是**纯文本 chunk 流**（非 SSE 帧），manus 是 **SSE 帧流**（`data:xxx\n\n`）。`utils/request.js` 的 `streamRequest` 用 `uni.request({ enableChunked: true })` + `onChunkReceived` 累积，manus 调用传 `{ sse: true }` 自动解析帧。**跨 chunk 的 UTF-8 多字节字符**已做残留缓冲拼接，中文不乱码
+1. **流式聊天**：后端 knowledge 两个接口是**纯文本 chunk 流**（非 SSE 帧），Manus 任务页订阅 `GET /ai/manus/task/{id}/stream?after=` 的 **SSE 事件流**（每帧 `data:` 为一个事件 JSON）。`utils/request.js` 的 `streamRequest` 用 `uni.request({ enableChunked: true })` + `onChunkReceived` 累积，传 `{ sse: true }` 自动剥离帧前缀；事件 JSON 解析失败只丢该帧（与 Web 端策略一致）。**跨 chunk 的 UTF-8 多字节字符**已做残留缓冲拼接，中文不乱码
 2. **Markdown 渲染**：mp-html npm 版**不含 markdown 插件**（markdown 属性会被静默忽略），改用 **marked 渲染为 HTML**（gfm 自动链接裸 URL）再交给 mp-html 展示与清洗。图片 URL 在 marked renderer 里重写为 `/api/image-proxy?url=` 代理（防盗链）；`/api/files/` 裸下载路径在预处理里包成链接
 3. **代码块保护**：markdown 预处理先提取 ``` 围栏和行内代码为占位符，URL 改写后再还原，避免污染代码内容
 4. **图片预览**：mp-html `imgtap` → `uni.previewImage`；**链接**：`/api/files/` 前缀 → `uni.downloadFile` + `uni.openDocument`（PDF 等），外链 → 复制剪贴板
@@ -78,10 +78,10 @@ src/
 - [ ] STT 录音：Android PCM 封装需真机验证；iOS wav 直出采样率是否 16kHz 需真机验证
 - [ ] TTS 播报：真机播放体验（开发者工具可播但建议真机确认）
 - [ ] 长按/滚动等手势在小程序端的实际体验
-- [ ] Manus 多步任务的 SSE 流式展示（工具调用过程文本较长时 UI 表现）
+- [ ] Manus 任务制页真机回归：任务创建 → 事件流实时渲染 → 报告卡片 → 交付物下载打开 → 追问 → 任务记录（新建/改标题/删除）；长任务事件流可能触发请求超时（`STREAM_TIMEOUT` 5 分钟）需真机确认
 
 ## 七、测试清单（个人测试流程）
 
-1. 开发者工具模拟器：登录/注册（验证码）、知识聊天流式（RAG 开/关）、引用标注展示、历史弹层全操作（切换/改标题/删除/批量删除）、Manus 聊天、图片预览、PDF 下载打开
+1. 开发者工具模拟器：登录/注册（验证码）、知识聊天流式（RAG 开/关）、引用标注展示、历史弹层全操作（切换/改标题/删除/批量删除）、Manus 任务制（创建任务/执行过程/报告/交付物/追问/任务记录管理）、图片预览、PDF 下载打开
 2. 真机（扫码预览，同一 Wi-Fi）：语音输入（Android 必测，iOS 有则测）、TTS 播报（短内容一次）、局域网/隧道地址切换
 3. 后端日志确认无异常、测试数据清理

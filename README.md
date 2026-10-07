@@ -8,7 +8,7 @@
 
 | 功能 | 说明 |
 |------|------|
-| 🤖 **AI 超级智能体** | 任务制 ReAct Agent：提交任务后自主规划分解、逐步执行（文件操作、网页搜索、PDF 生成、知识库检索、子智能体派发等），执行过程实时可视化（可折叠时间线），任务报告直接给出答案，产出的文件以交付物卡片提供预览/下载，支持多轮追问与任务记录回放 |
+| 🤖 **AI 超级智能体** | 任务制 ReAct Agent：提交任务后自主规划分解、逐步执行（文件操作、网页搜索、PDF 生成、知识库检索、子智能体派发等），执行过程实时可视化（可折叠时间线 + 计划进度），任务报告直接给出答案，产出的文件以交付物卡片提供预览/下载，支持多轮追问与任务记录回放；任务记录支持**改标题 / 删除 / 批量管理**，任务数据**按登录用户隔离** |
 | 🧠 **个人知识助手** | 多源知识融合问答，基于 RAG 检索笔记与收藏，支持流式对话、引用标注和切片展示 |
 | 📚 **RAG 知识库 + 引用标注** | MongoDB 向量库（自研 MongoVectorStore，应用层余弦检索），AI 回复标注来源编号 `[1]`、`[2]`，展开查看原文切片 |
 | 🔄 **引用持久化** | 引用数据随消息持久化到 MongoDB，刷新页面不丢失 |
@@ -28,7 +28,7 @@
 | 🖼 **图片点击放大预览** | 点击 AI 回复图片全屏放大（背景虚化 blur），消息区事件委托实现（DOMPurify 会剥离内联事件属性）；已取消长按保存交互 |
 | 👤 **移动端个人信息卡片** | 知识库聊天页移动端侧边栏底部：圆形头像 + 用户名 + 修改密码/退出登录（复用网页端图标与登出逻辑） |
 | 📱 **安卓 APP** | 轻量 WebView 壳（`android/` 独立 Gradle 工程，Kotlin 自研，无第三方框架），远程加载已部署 H5，支持服务器地址配置（内网穿透域名可改）、PDF 等文件原生下载与分享、录音输入 |
-| 🧩 **微信小程序端** | uni-app CLI + Vite（`miniprogram/` 独立工程，Vue3 语法编译到微信小程序）：应用中心首页（知识助手 / AI 超级智能体双入口）、**超级智能体任务制**（创建任务 / 执行过程实时渲染 / 任务报告 / 交付物下载打开 / 多轮追问 / 任务记录管理）、流式聊天（RAG 开关 + 引用折叠展示 + **多模型切换**）、历史会话管理（切换/改标题/删除/批量删除）、语音输入（STT）/播报（TTS）、图片下载本地化显示与点击预览、PDF 下载打开、服务器地址可配置 |
+| 🧩 **微信小程序端** | uni-app CLI + Vite（`miniprogram/` 独立工程，Vue3 语法编译到微信小程序）：应用中心首页（知识助手 / AI 超级智能体双入口）、**超级智能体任务制**（创建任务 / 执行过程实时渲染（计划进度 + 事件图标与 Web 一致）/ 任务报告卡片（铺满、可复制）/ 交付物下载打开 / 多轮追问 / 任务记录管理：新建、改标题、删除）、流式聊天（RAG 开关 + 引用折叠展示 + **多模型切换**）、历史会话管理（切换/改标题/删除/批量删除）、语音输入（STT）/播报（TTS）、图片下载本地化显示与点击预览、PDF 下载打开、服务器地址可配置 |
 
 ---
 
@@ -183,7 +183,7 @@ npm run dev:mp-weixin     # 开发模式（watch 增量编译），或 build:mp-
 ai-agent/
 ├── src/main/java/com/example/aiagent/
 │   ├── advisor/           # Spring AI Advisor（日志、提示词优化、RAG 引用捕获）
-│   ├── agent/             # Agent 核心（BaseAgent → ReActAgent → ToolCallAgent → Manus）
+│   ├── agent/             # Agent 核心（BaseAgent → ReActAgent → ToolCallAgent → Manus）· 任务制执行（ManusTaskAgent/ManusTaskContext）· 子智能体（SubAgentCatalog/SubAgentRunner）
 │   ├── app/               # 业务应用（KnowledgeApp，含 RAG 流式对话）
 │   ├── chatmemory/        # 聊天记忆（MongoDB / 文件）
 │   ├── config/            # 全局配置（CORS, JWT, MCP 后备, MyChatClientConfig 四个模型 ChatClient）
@@ -194,8 +194,9 @@ ai-agent/
 │   ├── model/             # 数据模型（含 RAG 引用标注字段、ChatModelDTO）
 │   ├── rag/               # RAG 检索增强（MongoDB 向量库 MongoVectorStore、文档加载、查询重写、检索优化），MongoVectorStoreConfig（基于 MongoDB）
 │   ├── repository/        # 数据访问层
-│   ├── service/           # 业务逻辑（AuthService、CaptchaService、ImageProxyService、ChatModelService 模型清单与解析）
-│   └── tool/              # Agent 工具（文件操作、PDF生成、图片搜索、工作流 WorkflowEngine/WorkflowTool 等）
+│   ├── bootstrap/         # 启动期逻辑（管理员账号检查、Manus 存量任务属主回填 ManusTaskOwnerBackfill）
+│   ├── service/           # 业务逻辑（ManusTaskService 任务编排/事件流/隔离、AuthService、CaptchaService、ImageProxyService、ChatModelService）
+│   └── tool/              # Agent 工具（文件操作、PDF生成、图片搜索、工作流 WorkflowEngine/WorkflowTool；Manus 专用：计划 PlanManagementTool、知识检索 KnowledgeSearchTool、交付物登记 RegisterDeliverableTool、子智能体派发 SubAgentTool）
 ├── frontend/
 │   └── src/
 │       ├── api/           # API 请求封装（含 RAG 流式接口）
@@ -279,13 +280,16 @@ ai-agent/
 | PUT | `/api/ai/knowledge/chat/history/{chatId}/title` | 更新会话标题 |
 | DELETE | `/api/ai/knowledge/chat/history/{chatId}` | 删除会话 |
 | GET | `/api/ai/model/list` | 可切换的大模型清单（含可用性与默认模型，登录即可访问） |
-| GET | `/api/ai/manus/chat` | 超级智能体对话（旧接口，小程序在用） |
+| GET | `/api/ai/manus/chat` | 超级智能体对话（旧会话式接口，已废弃，仅保留兼容） |
 | POST | `/api/ai/manus/task` | 创建 Manus 任务（JSON body：task），返回任务文档 |
 | GET | `/api/ai/manus/task/{taskId}/stream` | 订阅任务事件流（SSE，`after` 参数支持增量回放） |
 | GET | `/api/ai/manus/task/{taskId}` | 任务详情（计划/事件日志/报告/交付物，用于回放） |
 | GET | `/api/ai/manus/task/list` | 任务列表（最近 50 条，含计划进度） |
 | POST | `/api/ai/manus/task/{taskId}/stop` | 停止任务（执行中当步结束即停，排队中直接停止） |
 | POST | `/api/ai/manus/task/{taskId}/message` | 任务多轮追问（终态任务追加消息，开启新一轮执行） |
+| PUT | `/api/ai/manus/task/{taskId}/title` | 修改任务标题 |
+| DELETE | `/api/ai/manus/task/{taskId}` | 删除任务（仅终态可删：执行中/排队中须先停止） |
+| POST | `/api/ai/manus/task/batch-delete` | 批量删除任务（整批校验，任一不合法则整批拒绝） |
 | GET | `/api/ai/manus/task/{taskId}/deliverables` | 任务交付物清单 |
 | GET | `/api/ai/manus/task/{taskId}/deliverable/{index}/download` | 下载交付物文件 |
 | GET | `/api/ai/manus/task/{taskId}/deliverable/{index}/preview` | 在线预览交付物（文本/图片/PDF） |

@@ -9,7 +9,7 @@
 
 全栈 AI Agent 平台：Spring Boot 3.5.10 + Java 17（必须 `--enable-preview`）+ Vue 3，Spring AI 1.0.0-M6。
 对话模型 **4 个可切**：deepseek-flash / deepseek-v4-pro / qwen3.7-plus / qwen3.8-flash（`MyChatClientConfig` 一模型一 ChatClient Bean，Bean 名 = 模型 key，清单与元数据在 `constant/ChatModelCatalog`）；向量模型 **千问 Qwen-Plus**（DashScope，1536 维）；RAG 用自研 MongoDB 向量库；JWT 鉴权。
-超级智能体 **YuManus（任务制 ReAct）**：提交任务 → 规划分解 → 逐步执行 → 结构化事件流 → 任务报告 + 交付物；主模型千问（`dashscopeChatModel`），子智能体（researcher / knowledgeResearcher / writer，agent-as-tool 派发）用 DeepSeek（`openAiChatModel`）；事件协议与接口见 `ManusTaskService` / `ManusController`。
+超级智能体 **YuManus（任务制 ReAct）**：提交任务 → 规划分解 → 逐步执行 → 结构化事件流 → 任务报告 + 交付物；任务记录可改标题/删除/批量管理，**任务按创建用户隔离**（无管理员特例）；主模型千问（`dashscopeChatModel`），子智能体（researcher / knowledgeResearcher / writer，agent-as-tool 派发）用 DeepSeek（`openAiChatModel`）；事件协议与接口见 `ManusTaskService` / `ManusController`。
 三端：**Web**（frontend/）· **微信小程序**（miniprogram/，独立 uni-app 工程）· **安卓壳**（android/，WebView 远程加载已部署 H5，前端零改动）。
 
 ---
@@ -19,9 +19,9 @@
 | 包 | 职责 |
 |---|---|
 | `advisor/` | Advisor 横切逻辑（日志、提示词优化） |
-| `agent/` | Agent 核心（BaseAgent→ReActAgent→ToolCallAgent→Manus） |
+| `agent/` | Agent 核心（BaseAgent→ReActAgent→ToolCallAgent→Manus）+ 任务制执行（ManusTaskAgent/ManusTaskContext）+ 子智能体（SubAgentCatalog/SubAgentRunner） |
 | `app/` · `chatmemory/` | 业务应用（KnowledgeApp）· 聊天记忆 |
-| `bootstrap/` | 启动自检/初始化（ApplicationRunner、CommandLineRunner 等启动期逻辑） |
+| `bootstrap/` | 启动自检/初始化（管理员账号检查、Manus 存量任务属主回填 ManusTaskOwnerBackfill 等启动期逻辑） |
 | `config/` · `filter/` | 全局配置（CORS/JWT/Auth/McpFallbackConfig/MyChatClientConfig 四模型 ChatClient/ToolCallRepairingManager）· JWT 过滤器 |
 | `constant/` | 常量与静态配置数据（目录常量、黑名单、角色取值表、ChatModelCatalog 模型目录等） |
 | `controller/` | REST 控制器（**只做转发，不含业务**） |
@@ -29,7 +29,7 @@
 | `demo/` | 学习/示例代码，非生产逻辑，勿在此新增业务代码 |
 | `model/` · `repository/` | 数据模型/DTO · 数据访问层 |
 | `rag/` | 向量存储/文档加载/查询改写等技术实现（**不放对外 service**） |
-| `service/` · `tool/` | 业务逻辑（含面向 RAG/知识库的服务）· Agent 工具 |
+| `service/` · `tool/` | 业务逻辑（ManusTaskService 任务编排/事件流/隔离、面向 RAG/知识库的服务等）· Agent 工具（Manus 专用：PlanManagementTool/KnowledgeSearchTool/RegisterDeliverableTool/SubAgentTool） |
 | `notes/` · `docs/` | 知识库素材（处理后作 RAG）· 文档 |
 
 新增功能按职责归类：配置→config/，工具→tool/，检索→rag/，DTO→model/，常量→constant/，业务逻辑→service/，启动自检→bootstrap/。

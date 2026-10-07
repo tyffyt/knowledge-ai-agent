@@ -40,10 +40,10 @@
 | 登录注册 | `/login` | JWT 登录、注册（图片验证码） |
 | 个人知识助手 | `/knowledge` | RAG 知识库问答、流式对话、历史会话、引用标注、录音输入、**多模型切换**（输入框内左下角）、**语音播报**（仅图标） |
 | 大模型详情 | `/models` | 可切换模型的参数 / 价格 / 能力展示（首页个人中心入口进入） |
-| AI 超级智能体 | `/manus` | 流式对话、终止生成、图片展示 |
+| AI 超级智能体 | `/manus` | **任务制**：创建任务、执行过程时间线（计划进度）、任务报告、交付物预览/下载、多轮追问、停止任务、任务记录（改标题/删除/批量管理） |
 | 修改密码 | `/change-password` | 修改密码后退出登录 |
 
-前端已完成的移动端适配（375px 断点、抽屉侧边栏、safe-area、100dvh、16px 输入字号）在 WebView 中直接生效。
+前端已完成的移动端适配（375px 断点、抽屉侧边栏、safe-area、100dvh、16px 输入字号、头部历史对话开关）在 WebView 中直接生效。
 **新增功能随 H5 生效**：多模型切换、大模型详情页、语音播报等只在 `frontend/` 实现，壳层零改动，部署新 H5 即可，**无需重打 APK**。
 
 ### 2.2 APP 特有功能（壳层实现）
@@ -167,7 +167,7 @@ android/
 |--------|------|
 | **GET 传参限制** | 聊天接口是 GET + query 传 message，URL 编码后超 Tomcat `max-http-header-size`（8KB）会直接 400（HTML 错误页）。长文本建议后续加 POST 版本（参考 `/speech/tts` 的做法） |
 | **ReadableStream 依赖** | 前端流式用 `fetch + ReadableStream`，依赖较新 System WebView → `minSdk 26`（Android 8.0），老机型 System WebView 可自动升级 |
-| **Manus 180s 超时** | `/api/ai/manus/chat` 用 `SseEmitter` 超时 180s，长任务可能中断（既有限制） |
+| **Manus 180s 超时** | 旧接口 `/api/ai/manus/chat` 用 `SseEmitter` 超时 180s（既有限制，已废弃）；任务制页走 `GET /task/{id}/stream` 无超时，仅受浏览器/隧道长连接限制 |
 | **隧道长连接** | Cloudflare Tunnel / ngrok 对 SSE/流式长连接需实测；nginx 已配 `proxy_buffering off` |
 
 ### 4.4 下载与页面
