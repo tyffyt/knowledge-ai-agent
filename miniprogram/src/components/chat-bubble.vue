@@ -1,7 +1,7 @@
 <template>
 	<view class="bubble-row" :class="isUser ? 'row-user' : 'row-ai'">
-		<!-- AI 头像 -->
-		<view v-if="!isUser" class="avatar avatar-ai">知</view>
+		<!-- AI 头像（hideAvatar 时隐藏，如超级智能体报告区） -->
+		<view v-if="!isUser && !hideAvatar" class="avatar avatar-ai">知</view>
 
 		<view class="bubble-wrap">
 			<!-- 用户消息：绿底白字 -->
@@ -71,7 +71,11 @@ import { playTTS, stopSpeech } from '../utils/tts'
 import { getLocalImagePath, getImagePlaceholder, preloadMessageImages } from '../utils/image-loader'
 
 const props = defineProps({
-	msg: { type: Object, required: true }
+	msg: { type: Object, required: true },
+	// 隐藏左侧 AI 头像（超级智能体报告区使用）
+	hideAvatar: { type: Boolean, default: false },
+	// 紧凑排版：收敛标题字号与间距（长 Markdown 报告使用，避免默认 h1 过大显乱）
+	compact: { type: Boolean, default: false }
 })
 
 const isUser = computed(() => props.msg.role === 'user')
@@ -126,7 +130,18 @@ watch(
 	{ immediate: true }
 )
 
-const tagStyle = {
+const compactHeadingStyles = {
+	h1: 'font-size:32rpx;font-weight:700;color:#064E3B;margin:20rpx 0 12rpx;',
+	h2: 'font-size:30rpx;font-weight:700;color:#064E3B;margin:18rpx 0 10rpx;',
+	h3: 'font-size:28rpx;font-weight:600;color:#059669;margin:14rpx 0 8rpx;',
+	h4: 'font-size:26rpx;font-weight:600;color:#059669;margin:12rpx 0 8rpx;',
+	p: 'margin:10rpx 0;line-height:1.7;',
+	li: 'margin:6rpx 0;line-height:1.7;',
+	hr: 'border:none;border-top:1rpx solid rgba(16,185,129,0.3);margin:16rpx 0;'
+}
+
+const tagStyle = computed(() => {
+	const base = {
 	code: 'background:#F0FDF4;color:#065F46;padding:2rpx 8rpx;border-radius:6rpx;font-size:24rpx;',
 	pre: 'background:#F8FAFC;padding:20rpx;border-radius:12rpx;overflow-x:auto;font-size:24rpx;',
 	table: 'display:block;width:100%;overflow-x:auto;border-collapse:collapse;font-size:24rpx;',
@@ -134,7 +149,9 @@ const tagStyle = {
 	th: 'border:1rpx solid #D1D5DB;padding:8rpx 12rpx;background:#F0FDF4;',
 	blockquote: 'border-left:6rpx solid #10B981;padding-left:16rpx;color:#64748B;margin:16rpx 0;',
 	a: 'color:#059669;text-decoration:underline;'
-}
+	}
+	return props.compact ? { ...base, ...compactHeadingStyles } : base
+})
 
 /**
  * mp-html 的 imgtap/linktap emit 参数是 attrs 对象本身（Vue 语义），

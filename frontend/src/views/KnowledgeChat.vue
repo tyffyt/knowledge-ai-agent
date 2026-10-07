@@ -84,7 +84,8 @@
       </div>
     </Teleport>
 
-    <!-- 侧边栏右缘外侧切换按钮（不遮挡列表滚动条） -->
+
+    <!-- 侧边栏右缘外侧切换按钮（桌面端；不遮挡列表滚动条） -->
     <button class="toggle-sidebar-btn" :class="{ collapsed: !isSidebarOpen }" @click="toggleSidebar" :title="isSidebarOpen ? '收起历史对话' : '展开历史对话'">
 	      <ChevronLeft v-if="isSidebarOpen" class="icon" size="18" />
 	      <ChevronRight v-else class="icon" size="18" />
@@ -97,9 +98,6 @@
     <div class="chat-container">
         <div class="header">
           <div class="header-left">
-            <button class="sidebar-menu-btn" @click="toggleSidebar" title="历史对话" aria-label="历史对话">
-	              <Menu class="icon" size="18" />
-	            </button>
             <button class="back-btn" @click="$router.push('/')">
 	              <ArrowLeft class="icon" size="16" />
 	              返回
@@ -108,6 +106,16 @@
           </div>
         <div class="header-right">
           <span class="chat-id-display">{{ chatId }}</span>
+          <!-- 历史对话开关：仅移动端显示在头部最右（桌面端用侧栏右缘浮动按钮） -->
+          <button
+            class="history-toggle"
+            :class="{ active: isSidebarOpen }"
+            @click="toggleSidebar"
+            :title="isSidebarOpen ? '收起历史对话' : '展开历史对话'"
+            aria-label="历史对话"
+          >
+            <Menu class="icon" size="18" />
+          </button>
         </div>
       </div>
     <div class="messages" ref="messagesRef" @click="handleMessagesClick">
@@ -1340,44 +1348,6 @@ function sttErrorMessage(err) {
   height: 16px;
 }
 
-/* 侧边栏边缘切换按钮 */
-.toggle-sidebar-btn {
-	  position: absolute;
-	  top: 50%;
-	  left: 260px;
-	  /* 按钮整体置于侧边栏右缘外侧（不居中），避免遮挡列表滚动条 */
-	  transform: translateY(-50%);
-	  z-index: 50;
-	  display: flex;
-	  align-items: center;
-	  justify-content: center;
-	  width: 28px;
-	  height: 52px;
-	  background: rgba(255,255,255,0.85);
-	  backdrop-filter: blur(8px);
-	  -webkit-backdrop-filter: blur(8px);
-	  border: 1px solid rgba(255,255,255,0.3);
-	  border-radius: 0 10px 10px 0;
-	  color: #10B981;
-	  cursor: pointer;
-	  box-shadow: 2px 0 8px rgba(16,185,129,0.08);
-	  transition: color 0.2s, box-shadow 0.2s, left 0.3s ease;
-	}
-	.toggle-sidebar-btn:hover {
-	  color: #059669;
-	  box-shadow: 2px 0 16px rgba(16,185,129,0.15);
-	}
-.toggle-sidebar-btn .icon {
-  width: 18px;
-  height: 18px;
-}
-.toggle-sidebar-btn.collapsed {
-  left: 0;
-  transform: translateY(-50%);
-  border-radius: 0 8px 8px 0;
-  border-left: none;
-}
-
 .history-list {
   flex-grow: 1;
   overflow-y: scroll;
@@ -1811,32 +1781,73 @@ function sttErrorMessage(err) {
 }
 
 /* 移动端侧边栏开关按钮（桌面隐藏，移动端显示） */
-.sidebar-menu-btn {
-  display: none;
-  align-items: center;
-  justify-content: center;
-  width: 40px;
-  height: 40px;
-  flex-shrink: 0;
-  border: none;
-  border-radius: 12px;
-  background: rgba(16,185,129,0.08);
-  color: #10B981;
-  cursor: pointer;
-  transition: background 0.2s, color 0.2s;
-}
-.sidebar-menu-btn:hover {
-  background: rgba(16,185,129,0.15);
-  color: #059669;
-}
-.sidebar-menu-btn .icon {
-  width: 20px;
-  height: 20px;
-}
 .header-right {
   display: flex;
   align-items: center;
   flex-shrink: 0;
+  gap: 8px;
+}
+/* 历史对话开关：仅移动端显示在头部最右，样式与超级智能体页移动端统一 */
+.history-toggle {
+  display: none;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  flex-shrink: 0;
+  border: none;
+  border-radius: 12px;
+  background: rgba(16, 185, 129, 0.08);
+  color: #10B981;
+  cursor: pointer;
+  transition: background 0.2s, color 0.2s;
+}
+.history-toggle:hover,
+.history-toggle.active {
+  background: rgba(16, 185, 129, 0.15);
+  color: #059669;
+}
+.history-toggle .icon {
+  width: 20px;
+  height: 20px;
+}
+
+/* 侧边栏边缘切换按钮（桌面端） */
+.toggle-sidebar-btn {
+	  position: absolute;
+	  top: 50%;
+	  left: 260px;
+	  /* 按钮整体置于侧边栏右缘外侧（不居中），避免遮挡列表滚动条 */
+	  transform: translateY(-50%);
+	  z-index: 50;
+	  display: flex;
+	  align-items: center;
+	  justify-content: center;
+	  width: 28px;
+	  height: 52px;
+	  background: rgba(255,255,255,0.85);
+	  backdrop-filter: blur(8px);
+	  -webkit-backdrop-filter: blur(8px);
+	  border: 1px solid rgba(255,255,255,0.3);
+	  border-radius: 0 10px 10px 0;
+	  color: #10B981;
+	  cursor: pointer;
+	  box-shadow: 2px 0 8px rgba(16,185,129,0.08);
+	  transition: color 0.2s, box-shadow 0.2s, left 0.3s ease;
+	}
+	.toggle-sidebar-btn:hover {
+	  color: #059669;
+	  box-shadow: 2px 0 16px rgba(16,185,129,0.15);
+	}
+.toggle-sidebar-btn .icon {
+  width: 18px;
+  height: 18px;
+}
+.toggle-sidebar-btn.collapsed {
+  left: 0;
+  transform: translateY(-50%);
+  border-radius: 0 8px 8px 0;
+  border-left: none;
 }
 .back-btn {
 	  display: flex;
@@ -2045,16 +2056,22 @@ function sttErrorMessage(err) {
 .message-row.user .bubble-content {
 	  width: fit-content;
 	  max-width: min(85%, 65ch);
-	  background: linear-gradient(135deg, #34D399, #10B981);
-	  color: #fff;
+	  /* 用户消息灰底深字，字号/内边距/圆角与超级智能体页用户气泡一致 */
+	  background: #eceff4;
+	  color: #1e293b;
+	  font-size: 0.92rem;
+	  line-height: 1.6;
+	  padding: 0.65rem 1rem;
+	  border-radius: 14px 14px 4px 14px;
 	}
 .message-row.assistant .bubble-content {
   min-width: 12em;
   max-width: min(85%, 65ch);
-  background: #ffffff;
-  border: 1px solid #e2e8f0;
+  /* AI 回复透明底无边框，与超级智能体页报告区一致 */
+  background: transparent;
+  border: none;
   color: #1e293b;
-  box-shadow: 0 1px 4px rgba(0,0,0,0.04);
+  box-shadow: none;
 }
 /* AI 回复语音播报按钮 + 知识库引用区域（顶部分割线） */
 .speech-refs-area {
@@ -2253,15 +2270,15 @@ function sttErrorMessage(err) {
     margin-left: 0;
     border-right: none;
   }
-  .toggle-sidebar-btn {
-    display: none;
-  }
   .chat-id-display {
     display: none;
   }
-  /* 移动端头部：显示侧边栏开关，返回按钮紧凑 */
-  .sidebar-menu-btn {
+  /* 移动端头部：历史对话开关显示在最右侧（原头部左侧菜单按钮已移除，桌面浮动按钮隐藏） */
+  .history-toggle {
     display: flex;
+  }
+  .toggle-sidebar-btn {
+    display: none;
   }
   .back-btn {
     padding: 0 12px;

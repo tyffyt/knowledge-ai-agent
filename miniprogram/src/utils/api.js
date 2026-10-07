@@ -58,6 +58,50 @@ function withModel(query, model) {
 export const streamManusChat = (message, handlers) =>
 	streamRequest('/ai/manus/chat', { message }, handlers, { sse: true })
 
+// ---- Manus 任务制（ManusController，需 token；旧会话式接口保留但页面已切换到任务制）----
+export const createManusTask = (task) =>
+	request({ url: '/ai/manus/task', method: 'POST', data: { task }, timeout: 120000 })
+
+export const fetchManusTask = (taskId) =>
+	request({ url: '/ai/manus/task/' + encodeURIComponent(taskId) })
+
+export const fetchManusTaskList = () =>
+	request({ url: '/ai/manus/task/list' })
+
+export const stopManusTask = (taskId) =>
+	request({ url: '/ai/manus/task/' + encodeURIComponent(taskId) + '/stop', method: 'POST' })
+
+export const sendManusFollowUp = (taskId, message) =>
+	request({ url: '/ai/manus/task/' + encodeURIComponent(taskId) + '/message', method: 'POST', data: { message }, timeout: 120000 })
+
+export const renameManusTask = (taskId, title) =>
+	request({ url: '/ai/manus/task/' + encodeURIComponent(taskId) + '/title', method: 'PUT', data: { title } })
+
+export const deleteManusTask = (taskId) =>
+	request({ url: '/ai/manus/task/' + encodeURIComponent(taskId), method: 'DELETE' })
+
+/**
+ * 任务事件流（GET SSE，每帧 data 为一个事件 JSON）
+ * onEvent 收到解析后的事件对象；复用通用流式层的分帧与 UTF-8 跨块解码
+ */
+export const streamManusTaskEvents = (taskId, after, handlers) =>
+	streamRequest('/ai/manus/task/' + encodeURIComponent(taskId) + '/stream', { after: String(after || 0) }, {
+		onChunk: (text) => {
+			if (!handlers.onEvent || !text) return
+			try {
+				handlers.onEvent(JSON.parse(text))
+			} catch (e) {
+				// 单帧解析失败丢弃该帧（与 Web 侧逐帧解析策略一致）
+			}
+		},
+		onDone: handlers.onDone,
+		onError: handlers.onError
+	}, { sse: true })
+
+/** 交付物下载地址（需带 token 的 downloadFile 请求） */
+export const buildDeliverableDownloadUrl = (taskId, index) =>
+	'/ai/manus/task/' + encodeURIComponent(taskId) + '/deliverable/' + index + '/download'
+
 // ---- 语音（SpeechController，无需 token）----
 export const fetchTts = (text) =>
 	request({ url: '/speech/tts', method: 'POST', data: { text }, noAuth: true, responseType: 'arraybuffer', timeout: 120000 })

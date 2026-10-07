@@ -68,7 +68,7 @@
       <header class="task-header">
         <router-link to="/" class="back" aria-label="返回首页">
           <ArrowLeft class="icon" size="16" />
-          返回
+          <span class="back-text">返回</span>
         </router-link>
         <h1>AI 超级智能体</h1>
         <span v-if="active" class="status-chip" :class="statusKey(active.status)">
@@ -81,7 +81,7 @@
           @click="sidebarOpen = !sidebarOpen"
           aria-label="任务记录"
         >
-          <ListTodo class="icon" size="18" />
+          <Menu class="icon" size="18" />
         </button>
       </header>
 
@@ -408,7 +408,7 @@ import {
   Brain, Wrench, ListChecks, ListTodo, Plus,
   CircleCheck, CircleDashed, CircleAlert, ChevronDown, ChevronRight,
   Loader, FileText, Ban, MoreVertical, Check, Pencil, Trash2,
-  Copy, Image as ImageIcon, File,
+  Copy, Image as ImageIcon, File, Menu,
 } from '@lucide/vue'
 
 const showToast = inject('showToast', () => {})
@@ -1177,17 +1177,20 @@ onUnmounted(() => {
   box-shadow: 0 2px 8px rgba(16, 185, 129, 0.1);
 }
 .history-toggle {
+  /* 仅移动端显示；样式与普通智能体页移动端开关统一（浅绿底） */
   display: none;
   align-items: center;
   justify-content: center;
   width: 44px;
   height: 44px;
+  margin-left: auto;
+  flex-shrink: 0;
   border: none;
   border-radius: 12px;
-  background: transparent;
-  color: var(--text-secondary, #475569);
+  background: rgba(16, 185, 129, 0.08);
+  color: #10b981;
   cursor: pointer;
-  transition: background 200ms ease;
+  transition: background 0.2s, color 0.2s;
 }
 .history-toggle:hover,
 .history-toggle.active {
@@ -2228,13 +2231,40 @@ onUnmounted(() => {
   .history-toggle {
     display: flex;
   }
+  /* 头部压缩：返回只留图标，标题收缩省略 */
+  .back {
+    min-width: 44px;
+    height: 44px;
+    padding: 0 10px;
+  }
+  .back .back-text {
+    display: none;
+  }
+  .task-header {
+    gap: 0.5rem;
+    padding: 0 0.8rem;
+  }
+  .task-header h1 {
+    flex: 1;
+    min-width: 0;
+    font-size: 1.02rem;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .status-chip {
+    flex-shrink: 0;
+    font-size: 0.72rem;
+    padding: 0.15rem 0.55rem;
+  }
+  /* 抽屉宽度与知识问答页统一 */
   .task-sidebar {
     position: fixed;
     top: 0;
     bottom: 0;
     left: 0;
     z-index: 200;
-    width: min(300px, 84vw);
+    width: 260px;
     transform: translateX(-100%);
     transition: transform 250ms ease;
     box-shadow: 0 0 30px rgba(15, 23, 42, 0.18);
@@ -2249,7 +2279,7 @@ onUnmounted(() => {
     background: rgba(15, 23, 42, 0.35);
   }
   .task-main {
-    padding: 1rem 0.9rem 1.5rem;
+    padding: 1rem 0.75rem 1.25rem;
   }
   .send-btn .btn-text {
     display: none;
@@ -2257,6 +2287,34 @@ onUnmounted(() => {
   .send-btn {
     min-width: 44px;
     padding: 0 0.8rem;
+  }
+  /* iOS：字号小于 16px 聚焦会触发自动放大（对齐知识问答页修复）；
+     字号变大后占位文案会换行，高度放行到 56px 并恢复正常行高，避免内部滚动条 */
+  .input-area textarea {
+    font-size: 1rem;
+    min-height: 56px;
+    max-height: 56px;
+    line-height: 1.4;
+    padding: 0.35rem 1rem;
+  }
+  /* 面板与卡片收窄 */
+  .report-panel,
+  .plan-panel {
+    padding: 0.75rem 0.8rem;
+    border-radius: 13px;
+  }
+  .report-body {
+    font-size: 0.88rem;
+  }
+  .event-head {
+    padding: 0.5rem 0.65rem;
+  }
+  .event-body {
+    padding: 0 0.65rem 0.6rem;
+  }
+  .deliverable-chip {
+    padding: 0.5rem 0.6rem;
+    gap: 0.4rem;
   }
   .empty-title {
     font-size: 1.15rem;
