@@ -190,6 +190,9 @@
 68. **文件路径白名单校验必须用 Path 组件级比较**：字符串 `startsWith` 会被同级目录（`tmp2`、`tmp-backup`）绕过；`Path.startsWith(根目录)` + `relativize` 推导相对路径，登记与下载/预览两处都要校验
 69. **spring-boot:run 的 jvmArguments 值含空格只生效第一段**：`-Dspring-boot.run.jvmArguments="a -Db -Dc"` 中 b、c 被 Maven 吞成自身属性不进应用 JVM；多参数传递改用环境变量（`@Value("${manus.agent.pool-size:4}")` 可由 `MANUS_AGENT_POOL_SIZE` 映射）
 70. **对 MongoDB 库内字段/键名的假设必须直查验证**：向量库切片 metadata 以为有 `title` 实为 `filename`（pymongo/Compass 一查便知）；写取值逻辑前先查真实存储结构
+72. **交付物登记须认识生成工具返回的下载 URL**：模型把 `/api/files/...` 原样传给 register 会"文件不存在"，解析要按文件名兜底匹配
+73. **自动收尾计划后必须补发 plan_updated 事件**：只写库不补事件 → 前端计划面板一直转圈（库内终态与事件流视图是两条路径）
+74. **报告"声称与实际不符"要清单注入 + 句级校验兜底**：prompt 注入真实交付物清单；落库前句级校验（声称词+未登记文件名）追加更正段
 
 ### 前端陷阱（Vue Web）
 6. **localStorage 非响应式**：必须用 auth.js 响应式 ref，禁止 computed 里读 getUsername()
@@ -222,6 +225,8 @@
 47. **安卓 WebView 壳要点**：onCreateWindow 拦截 target=_blank / 三条下载路径 / 录音 HTTPS+双层权限 / 菜单 Teleport 防裁剪
 48. **微信小程序要点**：真实 AppID / es6:false / 预览链语法降级 / 图片本地化下载 / 录音参数 / 流式纯文本渲染
 65. **小程序 `<text>` 上的 `text-overflow` 不生效**：单行省略号必须用 `<view>`（项目里 `.tool-title`、历史项等能正常省略的都是 view）；否则名字不截断、整行被撑宽把后面的按钮挤出容器
+75. **小程序/uni 自定义组件复用时 mp-html 内容不更新**：切换任务后报告区空白（v-for key 同构复用实例）——长内容型组件加**内容相关动态 key** 强制重建
+76. **uni H5 的 scroll-view 直接设 scrollTop 无效**：滚动由组件内部状态管理，验证/自动化要用真实滚轮事件（cua.scroll）
 
 ---
 

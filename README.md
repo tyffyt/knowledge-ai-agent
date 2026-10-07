@@ -28,7 +28,7 @@
 | 🖼 **图片点击放大预览** | 点击 AI 回复图片全屏放大（背景虚化 blur），消息区事件委托实现（DOMPurify 会剥离内联事件属性）；已取消长按保存交互 |
 | 👤 **移动端个人信息卡片** | 知识库聊天页移动端侧边栏底部：圆形头像 + 用户名 + 修改密码/退出登录（复用网页端图标与登出逻辑） |
 | 📱 **安卓 APP** | 轻量 WebView 壳（`android/` 独立 Gradle 工程，Kotlin 自研，无第三方框架），远程加载已部署 H5，支持服务器地址配置（内网穿透域名可改）、PDF 等文件原生下载与分享、录音输入 |
-| 🧩 **微信小程序端** | uni-app CLI + Vite（`miniprogram/` 独立工程，Vue3 语法编译到微信小程序）：应用中心首页（知识助手 / AI 超级智能体双入口）、流式聊天（RAG 开关 + 引用折叠展示 + **多模型切换**）、历史会话管理（切换/改标题/删除/批量删除）、语音输入（STT）/播报（TTS）、图片下载本地化显示与点击预览、PDF 下载打开、服务器地址可配置 |
+| 🧩 **微信小程序端** | uni-app CLI + Vite（`miniprogram/` 独立工程，Vue3 语法编译到微信小程序）：应用中心首页（知识助手 / AI 超级智能体双入口）、**超级智能体任务制**（创建任务 / 执行过程实时渲染 / 任务报告 / 交付物下载打开 / 多轮追问 / 任务记录管理）、流式聊天（RAG 开关 + 引用折叠展示 + **多模型切换**）、历史会话管理（切换/改标题/删除/批量删除）、语音输入（STT）/播报（TTS）、图片下载本地化显示与点击预览、PDF 下载打开、服务器地址可配置 |
 
 ---
 
@@ -39,6 +39,8 @@
 ![Web 首页](docs/screenshots/web-home.png)
 
 ![Web 知识聊天](docs/screenshots/web-chat.png)
+
+![Web 超级智能体](docs/screenshots/web-manus.png)
 
 ![Web 大模型详情](docs/screenshots/web-models.png)
 
@@ -57,6 +59,8 @@
 **微信小程序**（uni-app 编译，真机运行）
 
 ![小程序首页](docs/screenshots/miniprogram-home.png) ![小程序聊天界面](docs/screenshots/miniprogram-chat.png)
+
+![小程序超级智能体](docs/screenshots/miniprogram-manus.png)
 
 
 ---
