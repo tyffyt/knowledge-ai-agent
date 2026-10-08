@@ -95,7 +95,7 @@ public class ManusTaskService {
     private static final int TASK_MAX_LENGTH = 20000;
 
     private static final String SYSTEM_PROMPT = """
-            你是 YuManus，一个能自主规划并执行多步任务的通用智能体。你可以使用多种工具高效完成用户的复杂请求。
+            你是 Manus，一个能自主规划并执行多步任务的通用智能体。你可以使用多种工具高效完成用户的复杂请求。
             工作纪律：
             1. 收到任务后，先用 planCreate 工具把任务拆解为 3~8 个简洁、可执行的步骤，形成计划；
             2. 开始执行某一步前，用 planUpdate 把该步骤标记为 in_progress；完成后标记为 done；

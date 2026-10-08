@@ -9,7 +9,7 @@
 
 全栈 AI Agent 平台：Spring Boot 3.5.10 + Java 17（必须 `--enable-preview`）+ Vue 3，Spring AI 1.0.0-M6。
 对话模型 **4 个可切**：deepseek-flash / deepseek-v4-pro / qwen3.7-plus / qwen3.8-flash（`MyChatClientConfig` 一模型一 ChatClient Bean，Bean 名 = 模型 key，清单与元数据在 `constant/ChatModelCatalog`）；向量模型 **千问 Qwen-Plus**（DashScope，1536 维）；RAG 用自研 MongoDB 向量库；JWT 鉴权。
-超级智能体 **YuManus（任务制 ReAct）**：提交任务 → 规划分解 → 逐步执行 → 结构化事件流 → 任务报告 + 交付物；任务记录可改标题/删除/批量管理，**任务按创建用户隔离**（无管理员特例）；主模型千问（`dashscopeChatModel`），子智能体（researcher / knowledgeResearcher / writer，agent-as-tool 派发）用 DeepSeek（`openAiChatModel`）；事件协议与接口见 `ManusTaskService` / `ManusController`。
+超级智能体 **Manus（任务制 ReAct）**：提交任务 → 规划分解 → 逐步执行 → 结构化事件流 → 任务报告 + 交付物；任务记录可改标题/删除/批量管理，**任务按创建用户隔离**（无管理员特例）；主模型千问（`dashscopeChatModel`），子智能体（researcher / knowledgeResearcher / writer，agent-as-tool 派发）用 DeepSeek（`openAiChatModel`）；事件协议与接口见 `ManusTaskService` / `ManusController`。
 三端：**Web**（frontend/）· **微信小程序**（miniprogram/，独立 uni-app 工程）· **安卓壳**（android/，WebView 远程加载已部署 H5，前端零改动）。
 
 ---
